@@ -1,0 +1,39 @@
+# Ignore VS Code settings (local only)
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# Mac
+.DS_Store
+
+# Test / coverage
+.pytest_cache/
+.coverage
+
+# SQLite
+*.sqlite3
+
+# Logs
+*.log
+
+# Node
+node_modules/
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+
+# Ignore secrets
+.env
+secrets.json
