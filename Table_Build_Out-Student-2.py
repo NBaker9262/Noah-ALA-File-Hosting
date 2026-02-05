@@ -94,7 +94,7 @@ def require_done(flag, q_label, what_to_type):
 # 1) Set the variables (VAR_1, NAME_1, ROWS_1) and (VAR_2, NAME_2, ROWS_2)
 # 2) Write the two preview(...) calls, then set Q1_DONE = "DONE"
 
-Q1_DONE = "CHANGE_ME"  # change to "DONE" when finished
+Q1_DONE = "DONE"  # change to "DONE" when finished
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q1 vars)
@@ -106,13 +106,13 @@ Q1_DONE = "CHANGE_ME"  # change to "DONE" when finished
 # NAME_2 = "NFLX"
 # ROWS_2 = 5
 # ----------------------------
-VAR_1 = None
-NAME_1 = "CHANGE_ME"
-ROWS_1 = 0
+VAR_1 = goog
+NAME_1 = "GOOG"
+ROWS_1 = 5
 
-VAR_2 = None
-NAME_2 = "CHANGE_ME"
-ROWS_2 = 0
+VAR_2 = nflx
+NAME_2 = "NFLX"
+ROWS_2 = 5
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q1 calls)
@@ -120,8 +120,8 @@ ROWS_2 = 0
 # preview(VAR_1, NAME_1, ROWS_1)
 # preview(VAR_2, NAME_2, ROWS_2)
 # ----------------------------
-# preview(VAR_1, NAME_1, ROWS_1)
-# preview(VAR_2, NAME_2, ROWS_2)
+preview(VAR_1, NAME_1, ROWS_1)
+preview(VAR_2, NAME_2, ROWS_2)
 
 if require_done(
     Q1_DONE,
@@ -146,14 +146,14 @@ goog_vol_col = find_col(goog, ["Volume", "volume", "Vol", "vol"], "Volume")
 # 1) Create q2_table using a function call
 # 2) Set Q2_DONE = "DONE"
 
-Q2_DONE = "CHANGE_ME"
+Q2_DONE = "DONE"  # change to "DONE" when finished
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q2)
 # REQUIRED TARGET:
 # q2_table = row_of_max(goog, goog_vol_col)
 # ----------------------------
-q2_table = None
+q2_table = row_of_max(goog, goog_vol_col)
 
 if require_done(Q2_DONE, "Q2", 'Type BOTH lines:\nq2_table = row_of_max(goog, goog_vol_col)\nQ2_DONE = "DONE"'):
     print("\n--- Q2: GOOG Highest Volume Week (single row) ---")
