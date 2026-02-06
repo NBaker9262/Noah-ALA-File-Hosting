@@ -164,12 +164,12 @@ if require_done(Q2_DONE, "Q2", 'Type BOTH lines:\nq2_table = row_of_max(goog, go
 # Q3 — Top 5 GOOG Volume Weeks
 # ============================================================
 
-Q3_DONE = "CHANGE_ME"
+Q3_DONE = "DONE"
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q3)
 # REQUIRED TARGET:
-q3_table = None
+q3_table = top_n_by_volume(goog, 5) 
 
 # ----------------------------
 
@@ -183,7 +183,7 @@ if require_done(Q3_DONE, "Q3", 'Type BOTH lines:\nq3_table = top_n_by_volume(goo
 # Q4 — Biggest Weekly Price Increase (GOOG)
 # ============================================================
 
-Q4_DONE = "CHANGE_ME"
+Q4_DONE = "DONE"
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q4)
@@ -191,8 +191,8 @@ Q4_DONE = "CHANGE_ME"
 # goog_change = add_change_column(goog)
 # q4_table = row_of_max(goog_change, "CloseMinusOpen")
 # ----------------------------
-goog_change = None
-q4_table = None
+goog_change = add_change_column(goog)
+q4_table = row_of_max(goog_change, "CloseMinusOpen")
 
 if require_done(
     Q4_DONE,
@@ -208,25 +208,24 @@ if require_done(
 # ============================================================
 nflx_vol_col = find_col(nflx, ["Volume", "volume", "Vol", "vol"], "Volume")
 
-Q5_DONE = "CHANGE_ME"
+Q5_DONE = "DONE"
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q5)
 # REQUIRED TARGET:
 # q5_table = row_of_max(nflx, nflx_vol_col)
 # ----------------------------
-q5_table = None
+q5_table = row_of_max(nflx, nflx_vol_col)
 
 if require_done(Q5_DONE, "Q5", 'Type BOTH lines:\nq5_table = row_of_max(nflx, nflx_vol_col)\nQ5_DONE = "DONE"'):
     print("\n--- Q5: NFLX Highest Volume Week (single row) ---")
     print(q5_table.to_string(index=False))
 
-
 # ============================================================
 # Q6 — Worst Week for NFLX (most negative CloseMinusOpen)
 # ============================================================
 
-Q6_DONE = "CHANGE_ME"
+Q6_DONE = "DONE"
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q6)
@@ -234,8 +233,8 @@ Q6_DONE = "CHANGE_ME"
 # nflx_change = 
 # q6_table = 
 # ----------------------------
-nflx_change = None
-q6_table = None
+nflx_change = add_change_column(nflx)
+q6_table = nflx_change.sort_values(by="CloseMinusOpen", ascending=True).head(1)
 
 if require_done(
     Q6_DONE,
@@ -250,7 +249,7 @@ if require_done(
 # Q7 — Compare highest-volume weeks: GOOG vs NFLX
 # ============================================================
 
-Q7_DONE = "CHANGE_ME"
+Q7_DONE = "DONE"
 
 # ----------------------------
 # STUDENT BUILD ZONE (Q7)
@@ -260,7 +259,7 @@ Q7_DONE = "CHANGE_ME"
 # goog_max_vol = 
 # nflx_max_vol = 
 # ----------------------------
-goog_top1 = None
+goog_top1 = row_of_max(goog, goog_vol_col)
 nflx_top1 = None
 goog_max_vol = None
 nflx_max_vol = None
