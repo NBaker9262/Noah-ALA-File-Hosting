@@ -260,9 +260,9 @@ Q7_DONE = "DONE"
 # nflx_max_vol = 
 # ----------------------------
 goog_top1 = row_of_max(goog, goog_vol_col)
-nflx_top1 = None
-goog_max_vol = None
-nflx_max_vol = None
+nflx_top1 = row_of_max(nflx, nflx_vol_col)
+goog_max_vol = float(goog_top1[goog_vol_col].iloc[0])
+nflx_max_vol = float(nflx_top1[nflx_vol_col].iloc[0])
 
 if require_done(
     Q7_DONE,
