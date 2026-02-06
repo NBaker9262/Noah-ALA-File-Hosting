@@ -2,449 +2,298 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>House Admin Suite</title>
+    <title>House Admin Suite | Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+
     <style>
         :root {
-            --bg: #0f172a;
-            --card: #1e293b;
-            --accent: #38bdf8;
-            --accent-dim: rgba(56, 189, 248, 0.1);
-            --success: #22c55e;
-            --danger: #ef4444;
+            --bg: #0b0f1a;
+            --card: rgba(30, 41, 59, 0.7);
+            --accent: #0ea5e9;
+            --success: #10b981;
+            --danger: #f43f5e;
             --warning: #f59e0b;
+            --text-main: #f1f5f9;
             --text-muted: #94a3b8;
-            --border: rgba(255,255,255,0.1);
+            --border: rgba(255, 255, 255, 0.08);
         }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { 
+            background: rgba(255, 255, 255, 0.1); 
+            border-radius: 20px; 
+            border: 2px solid var(--bg); 
+        }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
         body {
-            font-family: 'Segoe UI', Inter, system-ui, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background-color: var(--bg);
-            color: white;
-            margin: 0;
-            padding: 20px;
-            height: 100vh;
-            box-sizing: border-box;
-            overflow: hidden; /* Main scroll handled by columns */
+            background-image: radial-gradient(circle at top right, rgba(14, 165, 233, 0.05), transparent);
+            color: var(--text-main);
+            margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
         }
-        
-        /* Layout */
+
+        header {
+            height: 60px; padding: 0 30px; display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid var(--border); background: rgba(11, 15, 26, 0.8); backdrop-filter: blur(10px); z-index: 100;
+        }
+
+        .logo { font-weight: 800; font-size: 1.2rem; letter-spacing: -0.5px; color: var(--accent); }
+
         .app-container {
-            display: grid;
-            grid-template-columns: 350px 1fr 350px;
-            gap: 20px;
-            height: 100%;
-            max-width: 1600px;
-            margin: 0 auto;
-        }
-        .col {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            height: 100%;
-            overflow-y: auto;
-            padding-right: 5px;
+            display: grid; grid-template-columns: 380px 1fr 380px; gap: 24px; padding: 24px; flex: 1; overflow: hidden;
         }
 
-        /* Panels & Cards */
+        .col { display: flex; flex-direction: column; gap: 20px; height: 100%; overflow-y: auto; padding-right: 8px; }
+
         .panel {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-        }
-        h2 { 
-            margin: 0 0 15px 0; font-size: 16px; text-transform: uppercase; 
-            letter-spacing: 0.05em; color: var(--text-muted); display: flex; justify-content: space-between;
+            background: var(--card); backdrop-filter: blur(12px); border: 1px solid var(--border);
+            border-radius: 16px; padding: 24px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         }
 
-        /* Inputs */
-        input[type="file"] {
-            font-size: 12px; margin-bottom: 10px; width: 100%;
-            color: var(--text-muted);
+        h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 0 0 20px 0; display: flex; justify-content: space-between; align-items: center; }
+
+        .dupe-card {
+            background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 12px; padding: 16px; margin-bottom: 12px;
         }
-        .search-bar {
-            width: 100%; background: var(--bg); border: 1px solid var(--border);
-            padding: 12px; border-radius: 8px; color: white; box-sizing: border-box;
+        .dupe-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .dupe-name { font-weight: 700; font-size: 1rem; color: var(--warning); }
+        .dupe-count { background: var(--warning); color: var(--bg); font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; }
+        .source-pill {
+            display: inline-block; font-size: 10px; background: rgba(255,255,255,0.05);
+            color: var(--text-muted); padding: 2px 8px; border-radius: 10px; margin: 4px 4px 0 0; border: 1px solid var(--border);
         }
 
-        /* Buttons */
-        .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; padding: 10px 20px; transition: 0.2s; width: 100%; }
-        .btn-primary { background: var(--accent); color: #0f172a; margin-top: 10px; }
-        .btn-download { background: var(--card); border: 1px solid var(--accent); color: var(--accent); margin-top: 10px; }
-        .btn-undo { background: transparent; border: 1px solid var(--text-muted); color: var(--text-muted); width: auto; padding: 5px 15px; font-size: 12px;}
+        .drop-zone { border: 1px dashed var(--border); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; margin-bottom: 12px; background: rgba(255,255,255,0.02); transition: 0.2s; }
+        .drop-zone:hover { border-color: var(--accent); background: rgba(14, 165, 233, 0.05); }
         
-        /* Review Cards */
-        .review-card {
-            background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 10px;
-            border-left: 3px solid var(--warning);
-        }
-        .review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .btn-acc { background: var(--success); color: white; padding: 8px; }
-        .btn-rej { background: var(--danger); color: white; padding: 8px; }
+        .btn { border: none; border-radius: 10px; cursor: pointer; font-weight: 600; padding: 12px; transition: 0.2s; font-size: 0.9rem; }
+        .btn-primary { background: var(--accent); color: white; width: 100%; box-shadow: 0 4px 14px 0 var(--accent-glow); }
+        
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 12px; }
+        .stat-box { background: var(--card); padding: 15px; border-radius: 12px; text-align: center; border: 1px solid var(--border); }
+        .stat-val { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
 
-        /* Roster Lists */
-        .house-group { margin-bottom: 20px; }
-        .house-header { 
-            color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--border); 
-            padding-bottom: 5px; margin-bottom: 8px; display: flex; justify-content: space-between;
-        }
-        .name-row { 
-            display: flex; justify-content: space-between; font-size: 13px; 
-            padding: 4px 8px; border-radius: 4px; 
-        }
-        .name-row:nth-child(odd) { background: rgba(255,255,255,0.03); }
-        .duplicate-tag { color: var(--warning); font-size: 11px; font-style: italic; }
-        .unknown-tag { color: var(--danger); }
-
-        /* Stats */
-        .stat-bar { display: flex; gap: 10px; margin-bottom: 20px; }
-        .stat-box { 
-            flex: 1; background: var(--card); padding: 15px; border-radius: 12px; text-align: center; 
-            border-bottom: 3px solid var(--accent);
-        }
-        .progress-container { background: var(--bg); height: 6px; border-radius: 3px; margin: 15px 0; overflow: hidden; }
-        .progress-fill { background: var(--success); height: 100%; width: 0%; transition: width 0.3s; }
-
-        /* Scrollbars */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: var(--bg); }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .house-section { margin-bottom: 24px; }
+        .house-title { font-size: 0.9rem; font-weight: 700; color: var(--accent); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; justify-content: space-between; }
+        .student-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
+        .grade-pill { font-size: 0.7rem; font-weight: bold; background: var(--bg); padding: 2px 8px; border-radius: 6px; color: var(--text-muted); margin-left: 8px;}
+        
+        .review-card { background: #1e293b; border-radius: 14px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); }
+        .review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; }
+        .btn-acc { background: var(--success); color: white; }
+        .btn-rej { background: rgba(244, 63, 94, 0.1); color: var(--danger); border: 1px solid var(--danger); }
+        .grade6-header { color: #facc15 !important; border-bottom-color: #facc15 !important; }
     </style>
 </head>
 <body>
 
+<header>
+    <div class="logo">HOUSE ADMIN <span style="font-weight: 300; opacity: 0.5;">PRO</span></div>
+    <div style="display: flex; gap: 15px;">
+        <button class="btn" style="background: transparent; border: 1px solid var(--border); color: var(--text-muted);" onclick="undo()">⟲ Undo</button>
+        <button class="btn btn-primary" style="width: auto; padding: 10px 20px;" onclick="exportCSV()">Download Results</button>
+    </div>
+</header>
+
 <div class="app-container">
-    
     <div class="col">
         <div class="panel">
-            <h2>Upload Files</h2>
-            <label style="font-size:12px; color:var(--accent);">1. MASTER ROSTER</label>
-            <input type="file" id="rosterInput">
-            <label style="font-size:12px; color:var(--accent);">2. CHECK LIST</label>
-            <input type="file" id="checkInput">
-            <button class="btn btn-primary" onclick="upload()">START PROCESSING</button>
+            <h2>Data Ingestion</h2>
+            <div class="drop-zone" onclick="document.getElementById('rosterInput').click()">
+                <p id="rosterStatus">Select Master Roster CSV</p>
+            </div>
+            <input type="file" id="rosterInput" style="display:none" onchange="document.getElementById('rosterStatus').innerText = this.files[0].name">
+
+            <div class="drop-zone" onclick="document.getElementById('checkInput').click()">
+                <p id="checkStatus">Upload Daily Check Files</p>
+            </div>
+            <input type="file" id="checkInput" multiple style="display:none" onchange="document.getElementById('checkStatus').innerText = this.files.length + ' files selected'">
+
+            <button class="btn btn-primary" onclick="processBatch()">Process Batch</button>
         </div>
 
-        <div class="panel" style="flex: 1; display: flex; flex-direction: column;">
-            <h2>
-                Review Queue 
-                <span id="reviewCount" style="color:var(--accent)">0</span>
-            </h2>
-            
-            <input type="text" id="searchInput" class="search-bar" placeholder="Search..." oninput="renderReview()">
-            
-            <div class="progress-container">
-                <div id="progressBar" class="progress-fill"></div>
-            </div>
-            
-            <div style="text-align: right; margin-bottom: 10px;">
-                <button class="btn btn-undo" onclick="undoLast()">⟲ Undo Last</button>
-            </div>
-
-            <div id="reviewList" style="flex: 1; overflow-y: auto;"></div>
+        <div class="panel" style="flex: 1;">
+            <h2>Review Needed <span id="revCount" style="color:var(--warning)">0</span></h2>
+            <div id="reviewList"></div>
         </div>
     </div>
 
     <div class="col">
-        <div id="statsBar" class="stat-bar"></div>
-
+        <div id="stats" class="stat-grid"></div>
         <div class="panel" style="flex: 1;">
-            <h2>Accepted Students <button class="btn btn-undo" style="float:right" onclick="downloadReport()">⬇ CSV</button></h2>
+            <h2>Accepted Records</h2>
             <div id="acceptedList"></div>
         </div>
     </div>
 
     <div class="col">
-        <div class="panel" style="border-color: var(--warning);">
-            <h2 style="color: var(--warning)">⚠️ Duplicates in Check File</h2>
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
-                These names appeared multiple times in your check file.
-            </div>
-            <div id="checkDupesList"></div>
+        <div class="panel">
+            <h2 style="color: var(--warning)">Duplicate Conflicts</h2>
+            <div id="dupeList"></div>
         </div>
-
-        <div class="panel" style="border-color: var(--danger);">
-            <h2 style="color: var(--danger)">❌ Unmatched / Unknown</h2>
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
-                No match found in roster (even with fuzzy search).
-            </div>
-            <div id="unknownList"></div>
-        </div>
-
-        <div class="panel" style="border-color: var(--text-muted); opacity: 0.7;">
-            <h2>🚫 Denied Matches</h2>
-            <div id="deniedList"></div>
+        <div class="panel">
+            <h2 style="color: var(--danger)">No Match Found</h2>
+            <div id="unkList"></div>
         </div>
     </div>
-
 </div>
 
 <script>
-// ---------- STATE MANAGEMENT ----------
 let state = {
-    houseCounts: {},
-    reviewData: [], // The raw fuzzy matches from server
-    history: [],    // For Undo function
-    
-    // Lists
-    accepted: [],   // {name, house, grade, source}
-    denied: [],     // Names string
-    unknown: [],    // Names string
-    checkDupes: [], // Names string
-    
-    handledIds: new Set() // IDs of review items we processed
+    roster: {}, accepted: [], denied: [], unknown: [], 
+    duplicates: {}, review: [], handledIds: new Set(), history: []
 };
 
-// ---------- CORE FUNCTIONS ----------
+function normalize(s) { return s.toLowerCase().replace(/[^a-z ]/g,"").replace(/\s+/g," ").trim(); }
+function parseCSV(file) { return new Promise(res => Papa.parse(file, {complete: r => res(r.data)})); }
 
-async function upload() {
-    const data = new FormData();
-    data.append("roster", document.getElementById("rosterInput").files[0]);
-    data.append("check", document.getElementById("checkInput").files[0]);
+async function processBatch() {
+    const rosterFile = document.getElementById('rosterInput').files[0];
+    const checkFiles = document.getElementById('checkInput').files;
+    if(!rosterFile || checkFiles.length === 0) return alert("Please select both roster and check files.");
 
-    try {
-        const res = await fetch("/process", {method:"POST", body:data});
-        const result = await res.json();
+    const rData = await parseCSV(rosterFile);
+    const houses = rData[0];
+    const houseCols = {};
+    houses.forEach((h, i) => { if(h && h.trim()) houseCols[i] = h.trim(); });
 
-        // 1. Load Automatic Matches
-        state.accepted = result.automatic.map(item => ({
-            name: item.name,
-            house: item.house,
-            grade: item.grade,
-            source: "Auto"
-        }));
-
-        // 2. Load Review Items
-        state.reviewData = result.review.map((item, idx) => ({...item, id: idx}));
-        
-        // 3. Load Others
-        state.unknown = result.unknown;
-        state.checkDupes = result.check_duplicates;
-        state.denied = [];
-        state.handledIds.clear();
-        state.history = [];
-
-        // 4. Calculate Initial Counts
-        recalcCounts();
-        renderAll();
-    } catch (e) {
-        alert("Error processing files. Please check your CSV format.");
-        console.error(e);
-    }
-}
-
-function handleAction(id, action) {
-    const item = state.reviewData.find(r => r.id === id);
-    
-    // Save state for undo
-    state.history.push({
-        type: 'review',
-        id: id,
-        action: action,
-        data: item
-    });
-
-    state.handledIds.add(id);
-
-    if (action === 'accept') {
-        state.accepted.push({
-            name: item.suggested,
-            house: item.house,
-            grade: item.grade,
-            source: "Manual"
-        });
-    } else {
-        state.denied.push(item.entered);
-    }
-
-    recalcCounts();
-    renderAll();
-}
-
-function undoLast() {
-    if (state.history.length === 0) return;
-    const last = state.history.pop();
-
-    if (last.type === 'review') {
-        state.handledIds.delete(last.id);
-        if (last.action === 'accept') {
-            // Remove the last added person with that name
-            const idx = state.accepted.findIndex(p => p.name === last.data.suggested);
-            if (idx > -1) state.accepted.splice(idx, 1);
-        } else {
-            // Remove from denied
-            const idx = state.denied.indexOf(last.data.entered);
-            if (idx > -1) state.denied.splice(idx, 1);
+    state.roster = {};
+    let fuseItems = [];
+    rData.slice(1).forEach(row => {
+        for(let col in houseCols) {
+            let c = parseInt(col);
+            if(!row[c+1]) continue;
+            let raw = row[c+1].trim();
+            let norm = normalize(raw);
+            let info = {raw, house: houseCols[col], grade: row[c]};
+            state.roster[norm] = info;
+            fuseItems.push({...info, norm});
         }
+    });
+
+    const fuse = new Fuse(fuseItems, { keys: ['norm'], threshold: 0.3, includeScore: true });
+    
+    state.accepted = []; state.denied = []; state.unknown = []; 
+    state.duplicates = {}; state.review = []; state.handledIds.clear();
+    let globalSeen = {}; 
+
+    for(let f of checkFiles) {
+        const rows = await parseCSV(f);
+        rows.forEach(row => {
+            if(row.length < 2) return;
+            let raw = `${row[1]} ${row[0]}`.trim();
+            let norm = normalize(raw);
+            if(!norm) return;
+            
+            if(!globalSeen[norm]) {
+                globalSeen[norm] = { raw, sources: [f.name] };
+                if(state.roster[norm]) {
+                    state.accepted.push({...state.roster[norm], type: 'Auto'});
+                } else {
+                    let res = fuse.search(norm);
+                    if(res.length > 0) {
+                        state.review.push({
+                            id: Math.random(), entered: raw, 
+                            suggested: res[0].item.raw, house: res[0].item.house, 
+                            grade: res[0].item.grade, score: Math.round((1-res[0].score)*100)
+                        });
+                    } else {
+                        state.unknown.push(raw);
+                    }
+                }
+            } else {
+                globalSeen[norm].sources.push(f.name);
+                let grade = state.roster[norm] ? state.roster[norm].grade : "??";
+                let house = state.roster[norm] ? state.roster[norm].house : "Unknown";
+                state.duplicates[norm] = {
+                    raw: globalSeen[norm].raw, grade, house, sources: globalSeen[norm].sources
+                };
+            }
+        });
     }
-    recalcCounts();
     renderAll();
 }
 
-// ---------- HELPERS ----------
-
-function recalcCounts() {
-    state.houseCounts = {};
-    state.accepted.forEach(p => {
-        state.houseCounts[p.house] = (state.houseCounts[p.house] || 0) + 1;
-    });
+function handle(id, action) {
+    const item = state.review.find(r => r.id === id);
+    if(!item) return;
+    state.handledIds.add(id);
+    state.history.push({id, action, item});
+    if(action === 'acc') state.accepted.push({raw: item.suggested, house: item.house, grade: item.grade, type: 'Manual'});
+    else state.denied.push({raw: item.entered, grade: item.grade});
+    if(state.handledIds.size === state.review.length && state.review.length > 0) confetti();
+    renderAll();
 }
 
-function getLastName(fullName) {
-    // Simple parser: takes the last word.
-    // "John Von Doe" -> "Doe"
-    const parts = fullName.trim().split(" ");
-    return parts[parts.length - 1].toLowerCase();
+function undo() {
+    let last = state.history.pop();
+    if(!last) return;
+    state.handledIds.delete(last.id);
+    if(last.action === 'acc') state.accepted = state.accepted.filter(a => !(a.raw === last.item.suggested && a.type === 'Manual'));
+    else state.denied = state.denied.filter(d => d.raw !== last.item.entered);
+    renderAll();
 }
-
-// ---------- RENDERING ----------
 
 function renderAll() {
-    renderStats();
-    renderReview();
-    renderAccepted();
-    renderLists();
-    updateProgress();
-}
+    let counts = {};
+    state.accepted.forEach(a => counts[a.house] = (counts[a.house]||0)+1);
+    document.getElementById('stats').innerHTML = Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([h,v])=>`
+        <div class="stat-box"><div class="stat-val">${v}</div><div style="font-size:10px; color:var(--text-muted); text-transform:uppercase">${h}</div></div>
+    `).join('');
 
-function renderStats() {
-    const div = document.getElementById("statsBar");
-    div.innerHTML = Object.entries(state.houseCounts)
-        .sort((a,b) => b[1] - a[1]) // Sort by highest score
-        .map(([house, val]) => `
-            <div class="stat-box">
-                <div style="font-size:12px; opacity:0.7">${house}</div>
-                <div style="font-size:24px; font-weight:800">${val}</div>
-            </div>
-        `).join("");
-}
-
-function renderReview() {
-    const term = document.getElementById("searchInput").value.toLowerCase();
-    const list = state.reviewData.filter(i => !state.handledIds.has(i.id));
-    const visible = list.filter(i => 
-        i.entered.toLowerCase().includes(term) || i.suggested.toLowerCase().includes(term)
-    );
-
-    document.getElementById("reviewCount").innerText = list.length;
-    
-    const container = document.getElementById("reviewList");
-    container.innerHTML = visible.slice(0, 50).map(i => `
+    const revList = state.review.filter(r => !state.handledIds.has(r.id));
+    document.getElementById('revCount').innerText = revList.length;
+    document.getElementById('reviewList').innerHTML = revList.map(r => `
         <div class="review-card">
-            <div style="display:flex; justify-content:space-between; align-items:center">
-                <div style="color: var(--text-muted); font-size:13px;">${i.entered}</div>
-                <div style="font-size:12px; background:var(--bg); padding:2px 6px; border-radius:4px;">${i.score}%</div>
-            </div>
-            <div style="font-weight:bold; margin: 5px 0;">➜ ${i.suggested}</div>
-            <div style="font-size:11px; color:var(--accent);">
-                ${i.house} (Gr. ${i.grade})
-            </div>
+            <div style="font-size:12px; color:var(--text-muted)">${r.entered}</div>
+            <div style="font-weight:700">→ ${r.suggested} <span class="grade-pill">Gr ${r.grade}</span></div>
             <div class="review-actions">
-                <button class="btn btn-rej" onclick="handleAction(${i.id}, 'reject')">Deny</button>
-                <button class="btn btn-acc" onclick="handleAction(${i.id}, 'accept')">Accept</button>
+                <button class="btn btn-rej" onclick="handle(${r.id}, 'rej')">Deny</button>
+                <button class="btn btn-acc" onclick="handle(${r.id}, 'acc')">Accept</button>
             </div>
         </div>
-    `).join("");
-}
+    `).join('');
 
-function renderAccepted() {
-    const container = document.getElementById("acceptedList");
-    
-    // Group by House
-    const grouped = {};
-    state.accepted.forEach(p => {
-        if (!grouped[p.house]) grouped[p.house] = [];
-        grouped[p.house].push(p);
+    const groups = {}; const grade6 = [];
+    state.accepted.forEach(a => { 
+        if(String(a.grade).startsWith('6')) grade6.push(a);
+        else { if(!groups[a.house]) groups[a.house]=[]; groups[a.house].push(a); }
     });
 
-    // Sort Houses Alphabetically
-    const sortedHouses = Object.keys(grouped).sort();
-
-    container.innerHTML = sortedHouses.map(house => {
-        // Sort People by Last Name
-        const people = grouped[house].sort((a, b) => 
-            getLastName(a.name).localeCompare(getLastName(b.name))
-        );
-
-        return `
-            <div class="house-group">
-                <div class="house-header">
-                    <span>${house}</span>
-                    <span>${people.length}</span>
-                </div>
-                ${people.map(p => `
-                    <div class="name-row">
-                        <span>${p.name}</span>
-                        <span style="opacity:0.5; font-size:11px;">${p.source}</span>
-                    </div>
-                `).join("")}
-            </div>
-        `;
-    }).join("");
-}
-
-function renderLists() {
-    // Duplicates
-    document.getElementById("checkDupesList").innerHTML = state.checkDupes.map(name => 
-        `<div class="name-row"><span class="duplicate-tag">${name}</span></div>`
-    ).join("");
-
-    // Unknowns
-    document.getElementById("unknownList").innerHTML = state.unknown.map(name => 
-        `<div class="name-row"><span class="unknown-tag">${name}</span></div>`
-    ).join("");
-
-    // Denied
-    document.getElementById("deniedList").innerHTML = state.denied.map(name => 
-        `<div class="name-row" style="color: #64748b">${name}</div>`
-    ).join("");
-}
-
-function updateProgress() {
-    const total = state.reviewData.length;
-    if (total === 0) {
-        document.getElementById("progressBar").style.width = "100%";
-        return;
+    let accHTML = "";
+    if(grade6.length > 0) {
+        accHTML += `<div class="house-section"><div class="house-title grade6-header"><span>6th Grade (All Houses)</span><span>${grade6.length}</span></div>` +
+            grade6.map(a => `<div class="student-row"><span>${a.raw}</span><span class="grade-pill">${a.house}</span></div>`).join('') + `</div>`;
     }
-    const handled = state.handledIds.size;
-    const pct = (handled / total) * 100;
-    document.getElementById("progressBar").style.width = `${pct}%`;
+    accHTML += Object.keys(groups).sort().map(h => `
+        <div class="house-section"><div class="house-title">${h}<span>${groups[h].length}</span></div>
+        ${groups[h].map(a => `<div class="student-row"><span>${a.raw}</span><span class="grade-pill">Gr ${a.grade}</span></div>`).join('')}</div>
+    `).join('');
+    document.getElementById('acceptedList').innerHTML = accHTML;
+
+    document.getElementById('dupeList').innerHTML = Object.values(state.duplicates).map(d => `
+        <div class="dupe-card">
+            <div class="dupe-header">
+                <div><div class="dupe-name">${d.raw}</div><div style="font-size:11px; color:var(--text-muted)">${d.house} • Grade ${d.grade}</div></div>
+                <div class="dupe-count">${d.sources.length}x FOUND</div>
+            </div>
+            <div>${d.sources.map(s => `<span class="source-pill">${s}</span>`).join('')}</div>
+        </div>
+    `).join('');
+    document.getElementById('unkList').innerHTML = state.unknown.map(u => `<div class="student-row">${u}</div>`).join('');
 }
 
-// ---------- EXPORT ----------
-
-function downloadReport() {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Status,Name,House,Grade,Notes\n";
-
-    // Add Accepted
-    state.accepted.forEach(p => {
-        csvContent += `Accepted,${p.name},${p.house},${p.grade},${p.source}\n`;
-    });
-
-    // Add Denied
-    state.denied.forEach(n => {
-        csvContent += `Denied,${n},,,User Rejected\n`;
-    });
-
-    // Add Unknown
-    state.unknown.forEach(n => {
-        csvContent += `Unknown,${n},,,No Match Found\n`;
-    });
-
-    // Add Duplicates
-    state.checkDupes.forEach(n => {
-        csvContent += `Duplicate,${n},,,Scanned Twice\n`;
-    });
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "final_house_report.csv");
-    document.body.appendChild(link);
-    link.click();
+function exportCSV() {
+    let csv = "Status,Name,House,Grade\n" + state.accepted.map(a => `Accepted,${a.raw},${a.house},${a.grade}`).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "house_export.csv"; a.click();
 }
 </script>
-
 </body>
 </html>
