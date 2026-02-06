@@ -22,15 +22,11 @@
 
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { 
-            background: rgba(255, 255, 255, 0.1); 
-            border-radius: 20px; 
-            border: 2px solid var(--bg); 
-        }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 20px; border: 2px solid var(--bg); }
         ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: 'Inter', system-ui, sans-serif;
             background-color: var(--bg);
             background-image: radial-gradient(circle at top right, rgba(14, 165, 233, 0.05), transparent);
             color: var(--text-main);
@@ -42,7 +38,7 @@
             border-bottom: 1px solid var(--border); background: rgba(11, 15, 26, 0.8); backdrop-filter: blur(10px); z-index: 100;
         }
 
-        .logo { font-weight: 800; font-size: 1.2rem; letter-spacing: -0.5px; color: var(--accent); }
+        .logo { font-weight: 800; font-size: 1.2rem; color: var(--accent); }
 
         .app-container {
             display: grid; grid-template-columns: 380px 1fr 380px; gap: 24px; padding: 24px; flex: 1; overflow: hidden;
@@ -57,23 +53,28 @@
 
         h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 0 0 20px 0; display: flex; justify-content: space-between; align-items: center; }
 
+        /* --- Duplicate Conflict Cards --- */
         .dupe-card {
             background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2);
-            border-radius: 12px; padding: 16px; margin-bottom: 12px;
+            border-radius: 12px; padding: 16px; margin-bottom: 12px; transition: 0.3s;
         }
         .dupe-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
         .dupe-name { font-weight: 700; font-size: 1rem; color: var(--warning); }
         .dupe-count { background: var(--warning); color: var(--bg); font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; }
+        
+        .dupe-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(245,158,11,0.1); }
+        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+        .btn-ghost:hover { background: rgba(255,255,255,0.05); color: white; }
+
         .source-pill {
             display: inline-block; font-size: 10px; background: rgba(255,255,255,0.05);
             color: var(--text-muted); padding: 2px 8px; border-radius: 10px; margin: 4px 4px 0 0; border: 1px solid var(--border);
         }
 
-        .drop-zone { border: 1px dashed var(--border); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; margin-bottom: 12px; background: rgba(255,255,255,0.02); transition: 0.2s; }
-        .drop-zone:hover { border-color: var(--accent); background: rgba(14, 165, 233, 0.05); }
-        
+        /* --- General UI --- */
+        .drop-zone { border: 1px dashed var(--border); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; margin-bottom: 12px; background: rgba(255,255,255,0.02); }
         .btn { border: none; border-radius: 10px; cursor: pointer; font-weight: 600; padding: 12px; transition: 0.2s; font-size: 0.9rem; }
-        .btn-primary { background: var(--accent); color: white; width: 100%; box-shadow: 0 4px 14px 0 var(--accent-glow); }
+        .btn-primary { background: var(--accent); color: white; width: 100%; }
         
         .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 12px; }
         .stat-box { background: var(--card); padding: 15px; border-radius: 12px; text-align: center; border: 1px solid var(--border); }
@@ -134,7 +135,10 @@
 
     <div class="col">
         <div class="panel">
-            <h2 style="color: var(--warning)">Duplicate Conflicts</h2>
+            <h2 style="color: var(--warning)">
+                Duplicate Conflicts
+                <button class="btn-ghost" onclick="resolveAllDupes()" id="clearAllBtn" style="display:none">Dismiss All</button>
+            </h2>
             <div id="dupeList"></div>
         </div>
         <div class="panel">
@@ -212,12 +216,25 @@ async function processBatch() {
                 let grade = state.roster[norm] ? state.roster[norm].grade : "??";
                 let house = state.roster[norm] ? state.roster[norm].house : "Unknown";
                 state.duplicates[norm] = {
-                    raw: globalSeen[norm].raw, grade, house, sources: globalSeen[norm].sources
+                    norm, raw: globalSeen[norm].raw, grade, house, sources: globalSeen[norm].sources
                 };
             }
         });
     }
     renderAll();
+}
+
+// RESOLUTION LOGIC
+function dismissDupe(norm) {
+    delete state.duplicates[norm];
+    renderAll();
+}
+
+function resolveAllDupes() {
+    if(confirm("Dismiss all duplicate alerts? This won't remove the students already accepted.")) {
+        state.duplicates = {};
+        renderAll();
+    }
 }
 
 function handle(id, action) {
@@ -277,15 +294,22 @@ function renderAll() {
     `).join('');
     document.getElementById('acceptedList').innerHTML = accHTML;
 
-    document.getElementById('dupeList').innerHTML = Object.values(state.duplicates).map(d => `
+    // RENDER DUPLICATES
+    const dupes = Object.values(state.duplicates);
+    document.getElementById('clearAllBtn').style.display = dupes.length > 0 ? 'inline-block' : 'none';
+    document.getElementById('dupeList').innerHTML = dupes.map(d => `
         <div class="dupe-card">
             <div class="dupe-header">
                 <div><div class="dupe-name">${d.raw}</div><div style="font-size:11px; color:var(--text-muted)">${d.house} • Grade ${d.grade}</div></div>
                 <div class="dupe-count">${d.sources.length}x FOUND</div>
             </div>
             <div>${d.sources.map(s => `<span class="source-pill">${s}</span>`).join('')}</div>
+            <div class="dupe-actions">
+                <button class="btn-ghost" onclick="dismissDupe('${d.norm}')">Dismiss Conflict</button>
+            </div>
         </div>
     `).join('');
+    
     document.getElementById('unkList').innerHTML = state.unknown.map(u => `<div class="student-row">${u}</div>`).join('');
 }
 
