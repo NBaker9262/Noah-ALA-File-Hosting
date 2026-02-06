@@ -53,25 +53,26 @@
 
         h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 0 0 20px 0; display: flex; justify-content: space-between; align-items: center; }
 
-        /* --- Duplicate Conflict Cards --- */
+        /* Duplicate Conflict Cards */
         .dupe-card {
             background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2);
-            border-radius: 12px; padding: 16px; margin-bottom: 12px; transition: 0.3s;
+            border-radius: 12px; padding: 16px; margin-bottom: 12px;
         }
         .dupe-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
         .dupe-name { font-weight: 700; font-size: 1rem; color: var(--warning); }
         .dupe-count { background: var(--warning); color: var(--bg); font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; }
         
-        .dupe-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(245,158,11,0.1); }
-        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
-        .btn-ghost:hover { background: rgba(255,255,255,0.05); color: white; }
+        .dupe-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(245,158,11,0.1); }
+        .btn-mini { border: none; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 700; padding: 6px; transition: 0.2s; }
+        .btn-mini-ignore { background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border); }
+        .btn-mini-resolve { background: var(--warning); color: var(--bg); }
 
         .source-pill {
             display: inline-block; font-size: 10px; background: rgba(255,255,255,0.05);
             color: var(--text-muted); padding: 2px 8px; border-radius: 10px; margin: 4px 4px 0 0; border: 1px solid var(--border);
         }
 
-        /* --- General UI --- */
+        /* General UI */
         .drop-zone { border: 1px dashed var(--border); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; margin-bottom: 12px; background: rgba(255,255,255,0.02); }
         .btn { border: none; border-radius: 10px; cursor: pointer; font-weight: 600; padding: 12px; transition: 0.2s; font-size: 0.9rem; }
         .btn-primary { background: var(--accent); color: white; width: 100%; }
@@ -136,8 +137,11 @@
     <div class="col">
         <div class="panel">
             <h2 style="color: var(--warning)">
-                Duplicate Conflicts
-                <button class="btn-ghost" onclick="resolveAllDupes()" id="clearAllBtn" style="display:none">Dismiss All</button>
+                Duplicates
+                <div id="dupeGlobalActions" style="display:none; gap: 4px;">
+                    <button class="btn-mini btn-mini-ignore" onclick="ignoreAllDupes()">Ignore All</button>
+                    <button class="btn-mini btn-mini-resolve" onclick="resolveAllDupes()">Resolve All</button>
+                </div>
             </h2>
             <div id="dupeList"></div>
         </div>
@@ -224,17 +228,31 @@ async function processBatch() {
     renderAll();
 }
 
-// RESOLUTION LOGIC
-function dismissDupe(norm) {
+// DUPLICATE ACTIONS
+function ignoreDupe(norm) {
     delete state.duplicates[norm];
     renderAll();
 }
 
-function resolveAllDupes() {
-    if(confirm("Dismiss all duplicate alerts? This won't remove the students already accepted.")) {
-        state.duplicates = {};
-        renderAll();
+function resolveDupe(norm) {
+    const dupe = state.duplicates[norm];
+    if(dupe) {
+        // Add the extra instances to accepted list
+        for(let i=1; i < dupe.sources.length; i++) {
+            state.accepted.push({raw: dupe.raw, house: dupe.house, grade: dupe.grade, type: 'Manual-Dupe'});
+        }
     }
+    delete state.duplicates[norm];
+    renderAll();
+}
+
+function ignoreAllDupes() {
+    state.duplicates = {};
+    renderAll();
+}
+
+function resolveAllDupes() {
+    Object.keys(state.duplicates).forEach(norm => resolveDupe(norm));
 }
 
 function handle(id, action) {
@@ -294,18 +312,19 @@ function renderAll() {
     `).join('');
     document.getElementById('acceptedList').innerHTML = accHTML;
 
-    // RENDER DUPLICATES
+    // Duplicates Section
     const dupes = Object.values(state.duplicates);
-    document.getElementById('clearAllBtn').style.display = dupes.length > 0 ? 'inline-block' : 'none';
+    document.getElementById('dupeGlobalActions').style.display = dupes.length > 0 ? 'flex' : 'none';
     document.getElementById('dupeList').innerHTML = dupes.map(d => `
         <div class="dupe-card">
             <div class="dupe-header">
                 <div><div class="dupe-name">${d.raw}</div><div style="font-size:11px; color:var(--text-muted)">${d.house} • Grade ${d.grade}</div></div>
-                <div class="dupe-count">${d.sources.length}x FOUND</div>
+                <div class="dupe-count">${d.sources.length}x</div>
             </div>
             <div>${d.sources.map(s => `<span class="source-pill">${s}</span>`).join('')}</div>
             <div class="dupe-actions">
-                <button class="btn-ghost" onclick="dismissDupe('${d.norm}')">Dismiss Conflict</button>
+                <button class="btn-mini btn-mini-ignore" onclick="ignoreDupe('${d.norm}')">Ignore</button>
+                <button class="btn-mini btn-mini-resolve" onclick="resolveDupe('${d.norm}')">Resolve</button>
             </div>
         </div>
     `).join('');
