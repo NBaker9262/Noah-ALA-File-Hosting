@@ -1,342 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>House Admin Suite | Pro</title>
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
-
-    <style>
-        :root {
-            --bg: #0b0f1a;
-            --card: rgba(30, 41, 59, 0.7);
-            --accent: #0ea5e9;
-            --success: #10b981;
-            --danger: #f43f5e;
-            --warning: #f59e0b;
-            --text-main: #f1f5f9;
-            --text-muted: #94a3b8;
-            --border: rgba(255, 255, 255, 0.08);
-        }
-
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 20px; border: 2px solid var(--bg); }
-        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-
-        body {
-            font-family: 'Inter', system-ui, sans-serif;
-            background-color: var(--bg);
-            background-image: radial-gradient(circle at top right, rgba(14, 165, 233, 0.05), transparent);
-            color: var(--text-main);
-            margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
-        }
-
-        header {
-            height: 60px; padding: 0 30px; display: flex; align-items: center; justify-content: space-between;
-            border-bottom: 1px solid var(--border); background: rgba(11, 15, 26, 0.8); backdrop-filter: blur(10px); z-index: 100;
-        }
-
-        .logo { font-weight: 800; font-size: 1.2rem; color: var(--accent); }
-
-        .app-container {
-            display: grid; grid-template-columns: 380px 1fr 380px; gap: 24px; padding: 24px; flex: 1; overflow: hidden;
-        }
-
-        .col { display: flex; flex-direction: column; gap: 20px; height: 100%; overflow-y: auto; padding-right: 8px; }
-
-        .panel {
-            background: var(--card); backdrop-filter: blur(12px); border: 1px solid var(--border);
-            border-radius: 16px; padding: 24px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-
-        h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 0 0 20px 0; display: flex; justify-content: space-between; align-items: center; }
-
-        /* Duplicate Conflict Cards */
-        .dupe-card {
-            background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2);
-            border-radius: 12px; padding: 16px; margin-bottom: 12px;
-        }
-        .dupe-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-        .dupe-name { font-weight: 700; font-size: 1rem; color: var(--warning); }
-        .dupe-count { background: var(--warning); color: var(--bg); font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; }
-        
-        .dupe-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(245,158,11,0.1); }
-        .btn-mini { border: none; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 700; padding: 6px; transition: 0.2s; }
-        .btn-mini-ignore { background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border); }
-        .btn-mini-resolve { background: var(--warning); color: var(--bg); }
-
-        .source-pill {
-            display: inline-block; font-size: 10px; background: rgba(255,255,255,0.05);
-            color: var(--text-muted); padding: 2px 8px; border-radius: 10px; margin: 4px 4px 0 0; border: 1px solid var(--border);
-        }
-
-        /* General UI */
-        .drop-zone { border: 1px dashed var(--border); border-radius: 12px; padding: 25px; text-align: center; cursor: pointer; margin-bottom: 12px; background: rgba(255,255,255,0.02); }
-        .btn { border: none; border-radius: 10px; cursor: pointer; font-weight: 600; padding: 12px; transition: 0.2s; font-size: 0.9rem; }
-        .btn-primary { background: var(--accent); color: white; width: 100%; }
-        
-        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 12px; }
-        .stat-box { background: var(--card); padding: 15px; border-radius: 12px; text-align: center; border: 1px solid var(--border); }
-        .stat-val { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
-
-        .house-section { margin-bottom: 24px; }
-        .house-title { font-size: 0.9rem; font-weight: 700; color: var(--accent); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; justify-content: space-between; }
-        .student-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
-        .grade-pill { font-size: 0.7rem; font-weight: bold; background: var(--bg); padding: 2px 8px; border-radius: 6px; color: var(--text-muted); margin-left: 8px;}
-        
-        .review-card { background: #1e293b; border-radius: 14px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); }
-        .review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; }
-        .btn-acc { background: var(--success); color: white; }
-        .btn-rej { background: rgba(244, 63, 94, 0.1); color: var(--danger); border: 1px solid var(--danger); }
-        .grade6-header { color: #facc15 !important; border-bottom-color: #facc15 !important; }
-    </style>
+<meta charset="UTF-8">
+<title>Music Queue Dashboard</title>
+<link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
 <header>
-    <div class="logo">HOUSE ADMIN <span style="font-weight: 300; opacity: 0.5;">PRO</span></div>
-    <div style="display: flex; gap: 15px;">
-        <button class="btn" style="background: transparent; border: 1px solid var(--border); color: var(--text-muted);" onclick="undo()">⟲ Undo</button>
-        <button class="btn btn-primary" style="width: auto; padding: 10px 20px;" onclick="exportCSV()">Download Results</button>
-    </div>
+<h1>Music Queue Dashboard</h1>
 </header>
 
-<div class="app-container">
-    <div class="col">
-        <div class="panel">
-            <h2>Data Ingestion</h2>
-            <div class="drop-zone" onclick="document.getElementById('rosterInput').click()">
-                <p id="rosterStatus">Select Master Roster CSV</p>
-            </div>
-            <input type="file" id="rosterInput" style="display:none" onchange="document.getElementById('rosterStatus').innerText = this.files[0].name">
+<main>
 
-            <div class="drop-zone" onclick="document.getElementById('checkInput').click()">
-                <p id="checkStatus">Upload Daily Check Files</p>
-            </div>
-            <input type="file" id="checkInput" multiple style="display:none" onchange="document.getElementById('checkStatus').innerText = this.files.length + ' files selected'">
-
-            <button class="btn btn-primary" onclick="processBatch()">Process Batch</button>
-        </div>
-
-        <div class="panel" style="flex: 1;">
-            <h2>Review Needed <span id="revCount" style="color:var(--warning)">0</span></h2>
-            <div id="reviewList"></div>
-        </div>
-    </div>
-
-    <div class="col">
-        <div id="stats" class="stat-grid"></div>
-        <div class="panel" style="flex: 1;">
-            <h2>Accepted Records</h2>
-            <div id="acceptedList"></div>
-        </div>
-    </div>
-
-    <div class="col">
-        <div class="panel">
-            <h2 style="color: var(--warning)">
-                Duplicates
-                <div id="dupeGlobalActions" style="display:none; gap: 4px;">
-                    <button class="btn-mini btn-mini-ignore" onclick="ignoreAllDupes()">Ignore All</button>
-                    <button class="btn-mini btn-mini-resolve" onclick="resolveAllDupes()">Resolve All</button>
-                </div>
-            </h2>
-            <div id="dupeList"></div>
-        </div>
-        <div class="panel">
-            <h2 style="color: var(--danger)">No Match Found</h2>
-            <div id="unkList"></div>
-        </div>
-    </div>
+<div class="song">
+<img src="cover.jpg" class="cover">
+<div class="meta">
+<div class="title">If We Were Vampires</div>
+<div class="artist">Noah Kahan</div>
+<button class="lyricsBtn"
+data-lyrics="https://genius.com/Jason-isbell-if-we-were-vampires-lyrics">
+Lyrics
+</button>
+</div>
 </div>
 
-<script>
-let state = {
-    roster: {}, accepted: [], denied: [], unknown: [], 
-    duplicates: {}, review: [], handledIds: new Set(), history: []
-};
+</main>
 
-function normalize(s) { return s.toLowerCase().replace(/[^a-z ]/g,"").replace(/\s+/g," ").trim(); }
-function parseCSV(file) { return new Promise(res => Papa.parse(file, {complete: r => res(r.data)})); }
+<div id="lyricsModal" class="modal hidden">
+<div class="modalContent">
 
-async function processBatch() {
-    const rosterFile = document.getElementById('rosterInput').files[0];
-    const checkFiles = document.getElementById('checkInput').files;
-    if(!rosterFile || checkFiles.length === 0) return alert("Please select both roster and check files.");
+<div class="modalHeader">
+<span id="lyricsTitle"></span>
+<button id="closeLyrics">✕</button>
+</div>
 
-    const rData = await parseCSV(rosterFile);
-    const houses = rData[0];
-    const houseCols = {};
-    houses.forEach((h, i) => { if(h && h.trim()) houseCols[i] = h.trim(); });
+<div id="lyricsEmbedMount"></div>
 
-    state.roster = {};
-    let fuseItems = [];
-    rData.slice(1).forEach(row => {
-        for(let col in houseCols) {
-            let c = parseInt(col);
-            if(!row[c+1]) continue;
-            let raw = row[c+1].trim();
-            let norm = normalize(raw);
-            let info = {raw, house: houseCols[col], grade: row[c]};
-            state.roster[norm] = info;
-            fuseItems.push({...info, norm});
-        }
-    });
+</div>
+</div>
 
-    const fuse = new Fuse(fuseItems, { keys: ['norm'], threshold: 0.3, includeScore: true });
-    
-    state.accepted = []; state.denied = []; state.unknown = []; 
-    state.duplicates = {}; state.review = []; state.handledIds.clear();
-    let globalSeen = {}; 
+<script src="app.js"></script>
 
-    for(let f of checkFiles) {
-        const rows = await parseCSV(f);
-        rows.forEach(row => {
-            if(row.length < 2) return;
-            let raw = `${row[1]} ${row[0]}`.trim();
-            let norm = normalize(raw);
-            if(!norm) return;
-            
-            if(!globalSeen[norm]) {
-                globalSeen[norm] = { raw, sources: [f.name] };
-                if(state.roster[norm]) {
-                    state.accepted.push({...state.roster[norm], type: 'Auto'});
-                } else {
-                    let res = fuse.search(norm);
-                    if(res.length > 0) {
-                        state.review.push({
-                            id: Math.random(), entered: raw, 
-                            suggested: res[0].item.raw, house: res[0].item.house, 
-                            grade: res[0].item.grade, score: Math.round((1-res[0].score)*100)
-                        });
-                    } else {
-                        state.unknown.push(raw);
-                    }
-                }
-            } else {
-                globalSeen[norm].sources.push(f.name);
-                let grade = state.roster[norm] ? state.roster[norm].grade : "??";
-                let house = state.roster[norm] ? state.roster[norm].house : "Unknown";
-                state.duplicates[norm] = {
-                    norm, raw: globalSeen[norm].raw, grade, house, sources: globalSeen[norm].sources
-                };
-            }
-        });
-    }
-    renderAll();
-}
-
-// DUPLICATE ACTIONS
-function ignoreDupe(norm) {
-    delete state.duplicates[norm];
-    renderAll();
-}
-
-function resolveDupe(norm) {
-    const dupe = state.duplicates[norm];
-    if(dupe) {
-        // Add the extra instances to accepted list
-        for(let i=1; i < dupe.sources.length; i++) {
-            state.accepted.push({raw: dupe.raw, house: dupe.house, grade: dupe.grade, type: 'Manual-Dupe'});
-        }
-    }
-    delete state.duplicates[norm];
-    renderAll();
-}
-
-function ignoreAllDupes() {
-    state.duplicates = {};
-    renderAll();
-}
-
-function resolveAllDupes() {
-    Object.keys(state.duplicates).forEach(norm => resolveDupe(norm));
-}
-
-function handle(id, action) {
-    const item = state.review.find(r => r.id === id);
-    if(!item) return;
-    state.handledIds.add(id);
-    state.history.push({id, action, item});
-    if(action === 'acc') state.accepted.push({raw: item.suggested, house: item.house, grade: item.grade, type: 'Manual'});
-    else state.denied.push({raw: item.entered, grade: item.grade});
-    if(state.handledIds.size === state.review.length && state.review.length > 0) confetti();
-    renderAll();
-}
-
-function undo() {
-    let last = state.history.pop();
-    if(!last) return;
-    state.handledIds.delete(last.id);
-    if(last.action === 'acc') state.accepted = state.accepted.filter(a => !(a.raw === last.item.suggested && a.type === 'Manual'));
-    else state.denied = state.denied.filter(d => d.raw !== last.item.entered);
-    renderAll();
-}
-
-function renderAll() {
-    let counts = {};
-    state.accepted.forEach(a => counts[a.house] = (counts[a.house]||0)+1);
-    document.getElementById('stats').innerHTML = Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([h,v])=>`
-        <div class="stat-box"><div class="stat-val">${v}</div><div style="font-size:10px; color:var(--text-muted); text-transform:uppercase">${h}</div></div>
-    `).join('');
-
-    const revList = state.review.filter(r => !state.handledIds.has(r.id));
-    document.getElementById('revCount').innerText = revList.length;
-    document.getElementById('reviewList').innerHTML = revList.map(r => `
-        <div class="review-card">
-            <div style="font-size:12px; color:var(--text-muted)">${r.entered}</div>
-            <div style="font-weight:700">→ ${r.suggested} <span class="grade-pill">Gr ${r.grade}</span></div>
-            <div class="review-actions">
-                <button class="btn btn-rej" onclick="handle(${r.id}, 'rej')">Deny</button>
-                <button class="btn btn-acc" onclick="handle(${r.id}, 'acc')">Accept</button>
-            </div>
-        </div>
-    `).join('');
-
-    const groups = {}; const grade6 = [];
-    state.accepted.forEach(a => { 
-        if(String(a.grade).startsWith('6')) grade6.push(a);
-        else { if(!groups[a.house]) groups[a.house]=[]; groups[a.house].push(a); }
-    });
-
-    let accHTML = "";
-    if(grade6.length > 0) {
-        accHTML += `<div class="house-section"><div class="house-title grade6-header"><span>6th Grade (All Houses)</span><span>${grade6.length}</span></div>` +
-            grade6.map(a => `<div class="student-row"><span>${a.raw}</span><span class="grade-pill">${a.house}</span></div>`).join('') + `</div>`;
-    }
-    accHTML += Object.keys(groups).sort().map(h => `
-        <div class="house-section"><div class="house-title">${h}<span>${groups[h].length}</span></div>
-        ${groups[h].map(a => `<div class="student-row"><span>${a.raw}</span><span class="grade-pill">Gr ${a.grade}</span></div>`).join('')}</div>
-    `).join('');
-    document.getElementById('acceptedList').innerHTML = accHTML;
-
-    // Duplicates Section
-    const dupes = Object.values(state.duplicates);
-    document.getElementById('dupeGlobalActions').style.display = dupes.length > 0 ? 'flex' : 'none';
-    document.getElementById('dupeList').innerHTML = dupes.map(d => `
-        <div class="dupe-card">
-            <div class="dupe-header">
-                <div><div class="dupe-name">${d.raw}</div><div style="font-size:11px; color:var(--text-muted)">${d.house} • Grade ${d.grade}</div></div>
-                <div class="dupe-count">${d.sources.length}x</div>
-            </div>
-            <div>${d.sources.map(s => `<span class="source-pill">${s}</span>`).join('')}</div>
-            <div class="dupe-actions">
-                <button class="btn-mini btn-mini-ignore" onclick="ignoreDupe('${d.norm}')">Ignore</button>
-                <button class="btn-mini btn-mini-resolve" onclick="resolveDupe('${d.norm}')">Resolve</button>
-            </div>
-        </div>
-    `).join('');
-    
-    document.getElementById('unkList').innerHTML = state.unknown.map(u => `<div class="student-row">${u}</div>`).join('');
-}
-
-function exportCSV() {
-    let csv = "Status,Name,House,Grade\n" + state.accepted.map(a => `Accepted,${a.raw},${a.house},${a.grade}`).join('\n');
-    const blob = new Blob([csv], {type:'text/csv'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "house_export.csv"; a.click();
-}
-</script>
 </body>
 </html>
