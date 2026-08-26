@@ -1,0 +1,2275 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Saving Up — App Design 1</title>
+<style>
+  :root {
+    --navy:#002D62; --crimson:#AE2734; --silver:#D0D2D3; --ink:#1A1A1A;
+    /* Ground + surface neutrals — near-black rather than a tinted grey, per the
+       design brief ("navy/crimson/white/silver plus whatever neutral greys you
+       need"): navy and crimson stay reserved for actual brand accents, the
+       backdrop itself is genuinely neutral. */
+    --bg:#07090e; --panel:#101a2c; --panel-2:#0c1524; --panel-border:#223052;
+    --panel-border-soft:#182541; --text:#f3f5f9; --muted:rgba(208,210,211,.82);
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box }
+  html { background:var(--bg) }
+  /* A dark scrollbar on the same palette as everything else — the default
+     silver-on-white system scrollbar is the single largest "this is still
+     just a document" tell on an otherwise fully-designed dark page.
+     Firefox honours scrollbar-color directly; Chromium (what a Chromebook
+     runs) has supported it since 121, so this isn't a Firefox-only nicety
+     here the way it sometimes is. No @supports needed — an unsupporting
+     browser just keeps its native scrollbar, which is a normal, working
+     scrollbar, not a broken or hidden one. */
+  html { scrollbar-color: var(--crimson) var(--panel-2); scrollbar-width: thin; }
+  body { margin:0; padding:0 0 5rem; color:var(--text);
+         font:16px/1.6 Carlito,Calibri,Arial,sans-serif;
+         /* A mesh-lit backdrop, not a flat fill: four soft radial glows at
+            different sizes and strengths (three colour, one a pure-dark
+            vignette pulling the far corners down) layered under a very
+            faint procedural grain (GRAIN_DATA_URI, above) that exists only
+            to keep the near-black areas between the glows from banding —
+            at 5% baked-in alpha it reads as texture, not pattern. Every
+            layer stays within navy/crimson/neutral, per the brand
+            constraint; nothing here is decorative colour that isn't ALA's
+            own. */
+         background:
+           url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'180'%20height%3D'180'%3E%3Cfilter%20id%3D'grain'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.85'%20numOctaves%3D'3'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20type%3D'matrix'%20values%3D'0%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200.05%200'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23grain)'%2F%3E%3C%2Fsvg%3E"),
+           radial-gradient(1100px 460px at 10% -12%, rgba(0,45,98,.55), transparent 60%),
+           radial-gradient(900px 420px at 105% 0%, rgba(174,39,52,.16), transparent 55%),
+           radial-gradient(700px 500px at 82% 78%, rgba(0,45,98,.22), transparent 62%),
+           radial-gradient(1400px 700px at 50% 115%, rgba(0,0,0,.55), transparent 60%),
+           var(--bg);
+         /* Deliberately left at the default scroll attachment, not fixed —
+            a fixed multi-layer gradient this size repaints on every scroll
+            frame on some lower-end panels, and the grain tile looks
+            identical either way since it's a small repeating pattern. Not
+            worth the performance question mark on the exact hardware this
+            has to run on. */
+         /* --progress (0..1) is set once, in one place, by RUNTIME's updateProgress()
+            — every visual that reflects "how far through the notebook" (the header
+            rail and the connecting thread beside the cards) reads this same value
+            rather than keeping its own copy in sync. */
+         --progress: 0; }
+  /* Every place code appears uses this one token — the worked example, the box they
+     type into, the revealed answer, the output, the option rows, and the collapsed
+     summary line. The whole task is comparing their typing against an example
+     character by character, and that is needlessly harder when they render at
+     different sizes. ui-monospace leads so a Chromebook picks its own best mono
+     rather than falling through a Windows-only name. */
+  :root { --mono: ui-monospace, SFMono-Regular, Consolas, "DejaVu Sans Mono", Menlo, monospace;
+          --code: 15px/1.5 var(--mono); }
+
+  header.hero { position:relative; padding:2.75rem 1.25rem 2.15rem; border-bottom:1px solid var(--panel-border-soft) }
+  .kicker { font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted) }
+  .projweek { display:inline-block; margin-top:.75rem; font-size:12px; letter-spacing:.14em;
+              text-transform:uppercase; font-weight:700; color:#fff; padding:.32rem .75rem;
+              border:1px solid var(--crimson); border-radius:999px; background:rgba(174,39,52,.16) }
+  header.hero h1 { margin:.85rem 0 0; font-size:2rem; font-family:Cinzel,Georgia,serif; color:#fff;
+                   text-wrap:balance }
+  header.hero .blurb { margin:.55rem 0 0; color:var(--muted); font-size:1.02rem; max-width:38rem }
+
+  /* Orientation without a finish line: a count and a filling rail, never a "you are
+     done for today" message — see the design brief. role=progressbar + the two
+     aria-value* attributes (kept current by RUNTIME's updateProgress()) give the
+     same information to a screen reader that the fill gives visually. */
+  .progress { margin-top:1.6rem; max-width:24rem }
+  .progress-rail { height:8px; border-radius:999px; background:rgba(255,255,255,.08);
+                    border:1px solid var(--panel-border-soft); overflow:hidden }
+  .progress-fill { height:100%; width:calc(var(--progress) * 100%);
+                    background:linear-gradient(90deg, var(--navy), var(--crimson));
+                    border-radius:999px; transition:width .5s ease }
+  .progress-count { margin-top:.55rem; font-size:12px; letter-spacing:.06em;
+                     text-transform:uppercase; color:var(--muted) }
+  .progress-count b { color:#fff; display:inline-block }
+  .stickybar-count b { display:inline-block }
+  /* The restrained "that counted" pulse — see updateProgress()'s bump()
+     helper. A brief scale-and-colour flash on the number only, nothing
+     more; no confetti, per the design brief. */
+  @keyframes bump { 0% { transform:scale(1); color:#fff } 45% { transform:scale(1.32); color:var(--crimson) }
+                     100% { transform:scale(1); color:#fff } }
+  .progress-count b.bump, .stickybar-count b.bump { animation:bump .4s ease }
+  @media (prefers-reduced-motion:reduce) {
+    .progress-count b.bump, .stickybar-count b.bump { animation:none }
+  }
+
+  /* Start Over — shared base for both placements (see resetControlHTML).
+     The header instance is deliberately understated: a small text-only
+     link, not a button that competes with the progress rail for attention —
+     see the design rule, "must be out of the way." It only appears once
+     there's a step done (RUNTIME's updateProgress toggles [hidden]), so a
+     brand-new page shows nothing here at all. */
+  .reset-header { position:absolute; top:1.5rem; right:1.25rem; text-align:right }
+  .reset-header .reset-trigger { background:none; border:0; padding:0; margin:0; cursor:pointer;
+    font:600 12px Carlito,Calibri,Arial,sans-serif; letter-spacing:.03em; color:var(--muted);
+    text-decoration:underline; text-underline-offset:3px }
+  .reset-header .reset-trigger:hover { color:#fff }
+  .reset-header .reset-confirm { margin-top:.5rem; max-width:15rem; text-align:left;
+    background:var(--panel-2); border:1px solid var(--panel-border); border-radius:8px;
+    padding:.7rem .8rem; box-shadow:0 18px 34px -18px rgba(0,0,0,.85) }
+  .reset-header .reset-warn { margin:0 0 .55rem; font-size:.8rem; color:var(--text) }
+
+  /* The sticky slim header — orientation that never leaves the screen once
+     a student has scrolled past the full hero. position:sticky alone is
+     what makes this work at all (it pins to the viewport top the instant
+     its own normal-flow position would scroll past it, no JS needed to
+     decide WHEN to stick); the baseline below it is a solid, always-legible
+     bar regardless of what a browser does or doesn't support beyond that.
+     aria-hidden (see the markup) keeps a screen reader from hearing
+     progress announced twice. */
+  .stickybar { position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:.9rem;
+               padding:.6rem 1.25rem; background:rgba(7,9,14,.94);
+               border-bottom:1px solid var(--panel-border-soft) }
+  .stickybar-title { font:700 13px/1.3 Cinzel,Georgia,serif; color:#fff; white-space:nowrap;
+                      overflow:hidden; text-overflow:ellipsis; flex:0 1 auto }
+  .stickybar-rail { flex:1 1 auto; max-width:14rem; height:5px; border-radius:999px;
+                     background:rgba(255,255,255,.1); overflow:hidden }
+  .stickybar-fill { height:100%; width:calc(var(--progress) * 100%);
+                     background:linear-gradient(90deg, var(--navy), var(--crimson)); border-radius:999px;
+                     transition:width .5s ease }
+  .stickybar-count { flex:0 0 auto; font:600 12px var(--mono); color:var(--muted) }
+  .stickybar-count b { color:#fff }
+
+  /* Progressive enhancement only: a browser without support for
+     scroll-driven animations keeps the solid baseline above, always
+     legible, never transparent — see the design brief's own warning that a
+     mishandled fallback here can hide content rather than just look
+     plainer. Inside @supports, the bar instead STARTS transparent (blended
+     into the hero behind it) and solidifies as the student scrolls the
+     first ~200px, driven entirely by scroll position via
+     animation-timeline: scroll(root) — no scroll event listener, no JS
+     at all. animation-fill-mode "both" (the "both" in the shorthand below)
+     is what makes it hold the FROM state before scrolling starts, rather
+     than flashing to solid on load and back. */
+  @supports (animation-timeline: scroll()) {
+    /* The CONTENTS fade too, not only the background. Solidifying the bar
+       alone left the title and the count fully legible at scroll 0, sitting
+       directly beneath the hero that already shows both — which reads as a
+       duplicated header rather than as orientation. There is nothing to
+       orient a student who can still see the real thing. Fading the whole
+       bar means it simply does not exist until the hero has gone. */
+    @keyframes stickybar-solidify {
+      from { background-color:rgba(7,9,14,0); border-bottom-color:transparent; box-shadow:none;
+             opacity:0; visibility:hidden }
+      to   { background-color:rgba(7,9,14,.94); border-bottom-color:var(--panel-border-soft);
+             box-shadow:0 14px 30px -20px rgba(0,0,0,.8); opacity:1; visibility:visible }
+    }
+    @media (prefers-reduced-motion:no-preference) {
+      .stickybar { animation:stickybar-solidify linear both; animation-timeline:scroll(root);
+                   animation-range:0 200px }
+    }
+  }
+  /* backdrop-filter, permitted ONLY here per the design brief — on at most
+     one element, since it is genuinely expensive to composite on a
+     low-end Chromebook GPU. A sticky bar that's on screen for the entire
+     rest of the scroll is the one place that expense buys something (text
+     over whatever card is currently scrolled underneath it stays legible);
+     thirty cards each paying that cost would not be. @supports-gated so a
+     browser without it just keeps the plain background above — still
+     opaque, still legible, nothing missing. */
+  @supports (backdrop-filter:blur(2px)) or (-webkit-backdrop-filter:blur(2px)) {
+    .stickybar { backdrop-filter:blur(14px) saturate(140%); -webkit-backdrop-filter:blur(14px) saturate(140%) }
+  }
+
+  main.board { max-width:48rem; margin:0 auto; padding:2.25rem 1.25rem 0 }
+
+  /* opacity/transform stay at their fully-visible baseline unconditionally
+     — the @supports block below only ever ADDS an entrance animation on
+     top of this, never removes the guarantee that .howto renders visible
+     with zero CSS support at all. This is the one property in this whole
+     stylesheet that has to be gotten right: see the design brief's warning
+     that a mishandled scroll-driven fallback can hide real content, not
+     just look plainer. */
+  .howto { border:1px solid var(--panel-border); border-radius:14px; padding:1.3rem 1.4rem 1.4rem;
+           margin:0 0 2.25rem; background:linear-gradient(180deg, var(--panel), var(--panel-2));
+           box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 22px 40px -28px rgba(0,0,0,.75);
+           opacity:1; transform:none }
+  .howto h2 { margin:0 0 .7rem; font-family:Cinzel,Georgia,serif; font-size:1.05rem; color:#fff;
+              text-wrap:balance }
+  .howto ul { margin:0; padding-left:1.2rem }
+  .howto li { margin:0 0 .55rem; font-size:.95rem }
+  .howto li:last-child { margin-bottom:0 }
+  .howto strong { color:#fff }
+  /* Scroll-driven, not JS-driven: as the page's own scroll position carries
+     .howto through the top of the viewport, animation-timeline: view() ties
+     its opacity/position DIRECTLY to that scroll progress — no
+     IntersectionObserver, no scroll listener. It is chosen for a static,
+     always-in-the-DOM element (never toggled by RUNTIME) specifically so
+     there is no interaction with the [hidden]/@starting-style reveal the
+     cards use below; the two mechanisms never touch the same element. Gated
+     on BOTH feature support and motion preference, and the animation only
+     ever runs on top of the unconditional opacity:1 baseline above — an
+     unsupporting browser, or a reduced-motion one, shows this section at
+     full opacity from the first paint, not blank. */
+  @supports (animation-timeline: view()) {
+    @keyframes howto-reveal { from { opacity:0; transform:translateY(22px) } to { opacity:1; transform:none } }
+    @media (prefers-reduced-motion: no-preference) {
+      .howto { animation:howto-reveal linear both; animation-timeline:view(); animation-range:entry 0% entry 60% }
+    }
+  }
+
+  /* The connecting thread. A plain vertical line, not one woven through each
+     card's actual on-screen position — see the design brief's own "do not
+     over-engineer it." .rail stretches to match .cards's height for free
+     (position:absolute + top:0;bottom:0 inside .track, which is
+     position:relative and whose own height comes from .cards, its only
+     normal-flow child) — no JS layout math anywhere. pathLength="1" on both
+     paths normalises stroke-dasharray/-offset to a 0..1 scale regardless of
+     the SVG's actual rendered height, and vector-effect keeps the stroke a
+     constant visual width under the non-uniform viewBox stretch that
+     preserveAspectRatio="none" produces. The fill's dashoffset reads the same
+     --progress custom property as the header rail above — one number, two
+     renderings of it. */
+  .track { position:relative }
+  .rail { position:absolute; top:.2rem; bottom:.2rem; left:0; width:28px; pointer-events:none }
+  .rail-svg { width:100%; height:100%; display:block; overflow:visible }
+  .rail-base { fill:none; stroke:rgba(208,210,211,.16); stroke-width:2; vector-effect:non-scaling-stroke }
+  .rail-fill { fill:none; stroke:var(--crimson); stroke-width:2; stroke-linecap:round;
+               vector-effect:non-scaling-stroke; stroke-dasharray:1;
+               stroke-dashoffset:calc(1 - var(--progress)); transition:stroke-dashoffset .6s ease }
+  .cards { margin-left:44px; display:flex; flex-direction:column; gap:1.15rem;
+           position:relative; padding-bottom:.5rem }
+  @media (max-width:480px) { .rail{ width:18px } .cards{ margin-left:30px } }
+  /* Slight alternating offset, wide screens only — narrow/phone stays a single
+     flush column so nothing can overlap or overflow a Chromebook window. */
+  @media (min-width:900px) { .card:nth-of-type(even) { transform:translateX(20px) } }
+
+  .card { position:relative; border-radius:14px; border:1px solid var(--panel-border);
+          background:linear-gradient(165deg, var(--panel), var(--panel-2));
+          box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 26px 46px -30px rgba(0,0,0,.8);
+          padding:1.25rem 1.35rem 1.35rem; opacity:1; transform:translateY(0);
+          transition:opacity .35s ease, transform .35s ease, border-color .25s ease, box-shadow .25s ease }
+  .card[hidden] { display:none }
+  #done { opacity:1; transform:translateY(0) }
+  /* The reveal, entirely in CSS. @starting-style defines the "before" frame
+     for a card the instant its computed display goes from none to
+     something rendered (exactly what happens when RUNTIME clears the
+     [hidden] attribute) — the browser plays that as the START of the
+     transition already declared on .card above, with no JS class-toggling,
+     no double-rAF force-reflow trick, nothing. A browser that doesn't
+     support @starting-style simply has no starting frame to animate from,
+     so the card just appears at its normal (fully visible) style instantly
+     — a pop instead of a fade-in, never a card stuck invisible, because the
+     BASE .card rule above is opacity:1 unconditionally. */
+  @starting-style {
+    .card { opacity:0; transform:translateY(14px) }
+    #done { opacity:0; transform:translateY(14px) }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    .card, #done { transition:none !important }
+  }
+  /* The current card — open, not yet done — gets the prominent treatment: a
+     crimson border plus a slow, subtle rotating conic-gradient accent ring
+     via ::after (registered as an animatable <angle> with @property, below)
+     — a collapsed, completed card gets none of this. The ring is a
+     supplementary layer, not a replacement for the plain border-color
+     above: if @property isn't supported, --step-angle is just an ordinary,
+     non-interpolating custom property, the gradient renders at its static
+     initial angle, and the card still reads as "the current one" from the
+     border-color and box-shadow alone. */
+  .card:not(.done):not([hidden]) { border-color:var(--crimson);
+    box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 0 0 1px rgba(174,39,52,.4),
+               0 30px 55px -30px rgba(0,0,0,.85) }
+  @property --step-angle { syntax:'<angle>'; inherits:false; initial-value:0deg }
+  .card:not(.done):not([hidden])::after {
+    content:""; position:absolute; inset:-1px; border-radius:inherit; padding:1px;
+    background:conic-gradient(from var(--step-angle), transparent 0 62%, var(--crimson) 78%, transparent 92%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    opacity:.55; pointer-events:none; animation:step-angle-spin 7s linear infinite;
+  }
+  @keyframes step-angle-spin { to { --step-angle:360deg } }
+  @media (prefers-reduced-motion:reduce) {
+    .card:not(.done):not([hidden])::after { animation:none }
+  }
+  .now-badge { display:none; position:absolute; top:-11px; right:18px; font-size:10px;
+               letter-spacing:.14em; text-transform:uppercase; font-weight:700; color:#fff;
+               background:var(--crimson); border-radius:999px; padding:.25rem .6rem }
+  .card:not(.done):not([hidden]) .now-badge { display:inline-block }
+
+  /* Each card owns one node on the thread beside it, positioned relative to its
+     own box — no JS needed to know where the rail's line actually is on screen. */
+  .card::before { content:""; position:absolute; top:1.5rem; left:-30px; width:11px; height:11px;
+                   border-radius:50%; background:var(--bg); border:2px solid rgba(208,210,211,.4) }
+  @media (max-width:480px) { .card::before{ left:-21px; width:9px; height:9px } }
+  .card.done::before { border-color:var(--crimson); background:var(--crimson) }
+  .card:not(.done):not([hidden])::before { border-color:#fff; background:#fff;
+    box-shadow:0 0 0 4px rgba(174,39,52,.35) }
+
+  /* Completed steps collapse to this row and stay collapsed until clicked — see
+     the design brief. A real <button> (keyboard-operable, focusable) rather than
+     a clickable div; CSS alone decides whether it or .card-body is what's on
+     screen, based purely on .done/.peek, so RUNTIME never has to toggle a
+     display style directly. A collapsed card also recedes visually: tighter
+     padding (it's a list row now, not a lesson) and a flatter, slightly
+     darker fill than the active card's — the two states should not read as
+     the same weight of object. */
+  .card.done { padding-top:.85rem; padding-bottom:.85rem;
+               background:linear-gradient(165deg, var(--panel-2), #0a1220) }
+  .card-summary { display:none; width:100%; align-items:center; gap:.65rem; background:transparent;
+                  border:0; margin:0; padding:0; color:var(--text); font:inherit; text-align:left;
+                  cursor:pointer; border-radius:8px; transition:background-color .15s ease }
+  .card.done .card-summary { display:flex }
+  .card.done .card-summary:hover { background:rgba(255,255,255,.035) }
+  .card.done .card-body { display:none }
+  .card.done.peek .card-body { display:block; margin-top:1rem; padding-top:1rem;
+                                border-top:1px dashed var(--panel-border) }
+  .card-summary:focus-visible { outline:2px solid #fff; outline-offset:3px; border-radius:6px }
+  .sum-tick { position:relative; flex:0 0 auto; width:1.1rem; height:1.1rem; border-radius:50%;
+              background:rgba(174,39,52,.18); border:1px solid var(--crimson) }
+  .sum-tick::after { content:""; position:absolute; left:4px; top:6px; width:6px; height:3px;
+                      border-left:2px solid var(--crimson); border-bottom:2px solid var(--crimson);
+                      transform:rotate(-45deg) }
+  .sum-index { flex:0 0 auto; font:600 12px var(--mono); color:var(--muted); min-width:1.5rem }
+  .sum-line { flex:1 1 auto; font:var(--code); color:var(--silver); overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap }
+  .sum-output { flex:0 1 auto; font:var(--code); font-size:13px; color:var(--muted);
+                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:38% }
+  .sum-output:empty { display:none }
+  .sum-chev { flex:0 0 auto; width:.55rem; height:.55rem; border-right:2px solid var(--muted);
+              border-bottom:2px solid var(--muted); transform:rotate(45deg); transition:transform .2s ease }
+  .card.peek .sum-chev { transform:rotate(-135deg) }
+
+  .prompt { font-weight:700; margin:.4rem 0 .85rem; font-size:1.05rem; color:#fff }
+  textarea { width:100%; font:var(--code); color:var(--text); padding:.7rem .8rem; background:#060911;
+             border:1px solid var(--panel-border); border-radius:8px; resize:vertical; min-height:3.2rem }
+  textarea:focus-visible { outline:2px solid var(--crimson); outline-offset:1px }
+  textarea:disabled { background:#0a0e17; color:var(--muted) }
+  .instruction { margin:0 0 .6rem; font-size:.9rem; color:var(--muted); font-style:italic }
+  .options { border:0; margin:0 0 .3rem; padding:0; display:flex; flex-direction:column; gap:.55rem }
+  .opt { display:flex; align-items:flex-start; gap:.65rem; padding:.65rem .8rem; border:1px solid var(--panel-border);
+         border-radius:8px; cursor:pointer; font:var(--code); background:rgba(255,255,255,.02) }
+  .opt:hover { border-color:#fff }
+  .opt input { flex:0 0 auto; width:1.05rem; height:1.05rem; margin-top:.15rem; cursor:pointer; accent-color:var(--crimson) }
+  .opt input:disabled { cursor:default }
+  .opt span { flex:1 1 auto; white-space:pre-wrap; word-break:break-word; color:var(--text) }
+  .opt.correct { border-color:#fff; background:rgba(255,255,255,.07) }
+  .opt.correct::after { content:"\2713"; margin-left:auto; padding-left:.5rem; color:#fff; font-weight:700 }
+  .opt.wrong { border-color:var(--crimson); background:rgba(174,39,52,.14) }
+  .opt.wrong span { text-decoration:line-through; opacity:.75; color:var(--muted) }
+  .opt.wrong::after { content:"\2715"; margin-left:auto; padding-left:.5rem; color:var(--crimson); font-weight:700 }
+  .confirm { margin-top:.85rem; background:#060911; color:var(--text); padding:.75rem .9rem;
+             border-radius:8px; font:15px/1.5 Carlito,Calibri,Arial,sans-serif; border:1px solid var(--panel-border) }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+             clip:rect(0,0,0,0); white-space:nowrap; border:0 }
+  .check-btn { font:600 14px Carlito,Calibri,Arial,sans-serif; background:var(--crimson); color:#fff;
+               border:0; border-radius:8px; padding:.65rem 1.3rem; cursor:pointer; margin-top:.75rem;
+               box-shadow:0 10px 24px -12px rgba(174,39,52,.65) }
+  .check-btn:hover { background:#c22e3d }
+  .check-btn:focus-visible { outline:2px solid #fff; outline-offset:2px }
+  .msg { margin-top:.75rem; font-size:.95rem; white-space:pre-wrap; color:var(--text) }
+  .msg:empty { margin-top:0 }
+  .msg.bad { color:#fff; font-weight:600; border-left:3px solid var(--crimson); padding-left:.65rem }
+  .msg.reveal { color:var(--text); background:#0b1220; padding:.7rem .8rem; border-radius:8px;
+                font:var(--code); border:1px solid var(--panel-border) }
+  .out { margin-top:.85rem; background:#050810; color:var(--text); padding:.8rem .9rem;
+         border-radius:8px; font:var(--code); white-space:pre-wrap; border:1px solid var(--panel-border) }
+  .out .lbl { display:block; color:var(--muted); font-size:11px; letter-spacing:.14em;
+              text-transform:uppercase; margin-bottom:.35rem }
+  .none { color:var(--muted); font-style:italic; font-size:.92rem; margin-top:.85rem }
+  .teach { margin:0 0 1.1rem }
+  .teach .says { margin:.2rem 0 .8rem; font-size:.98rem; color:var(--text) }
+  .teach .example { margin:0 0 .5rem }
+  .teach .code { margin:0; background:#0b1220; color:var(--silver); padding:.65rem .8rem;
+                 border-radius:8px 8px 0 0; font:var(--code); white-space:pre-wrap; word-break:break-word;
+                 border:1px solid var(--panel-border); border-bottom:0 }
+  .teach .example .out, .teach .example .none { margin-top:0; border-radius:0 0 8px 8px; border-top:0 }
+  .teach .watch { margin:.85rem 0 0; font-size:.9rem; color:var(--text); padding-left:.75rem;
+                  border-left:3px solid var(--crimson) }
+  .teach .watch .tag { display:inline-block; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+                        font-size:.72rem; color:#fff; background:var(--crimson); border-radius:4px;
+                        padding:.15rem .45rem; margin-right:.4rem }
+  .divider { border:0; border-top:1px dashed var(--panel-border); margin:1.1rem 0 .9rem }
+  .turn { font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted);
+          font-weight:700; margin:0 0 .6rem }
+
+  /* The capstone — the one moment on this page the design brief asked to
+     feel like "an ending worth reaching," not just the last card in the
+     list. A red/white/blue top edge (the brand's own three colours, in
+     that order, never introduced anywhere else on the page) marks it as
+     categorically different from a card; a richer mesh of radial glows
+     than the plain two-tone panel gradient every other box on this page
+     uses gives it more visual weight than anything before it. */
+  #done { position:relative; overflow:hidden; border:1px solid var(--crimson); border-radius:14px;
+          padding:2rem 1.5rem 1.7rem; margin:2rem 0 0; text-align:center;
+          background:
+            radial-gradient(600px 260px at 50% -10%, rgba(0,45,98,.5), transparent 60%),
+            radial-gradient(500px 240px at 100% 110%, rgba(174,39,52,.22), transparent 60%),
+            linear-gradient(165deg, var(--panel), var(--panel-2));
+          box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 30px 60px -30px rgba(0,0,0,.85);
+          transition:opacity .35s ease, transform .35s ease }
+  #done::before { content:""; position:absolute; top:0; left:0; right:0; height:4px;
+                   background:linear-gradient(90deg, var(--navy) 0 33%, #fff 33% 67%, var(--crimson) 67%) }
+  #done[hidden] { display:none }
+  .done-badge { width:3rem; height:3rem; margin:0 auto 1rem; border-radius:50%;
+                background:rgba(174,39,52,.16); border:2px solid var(--crimson); position:relative }
+  .done-badge::after { content:""; position:absolute; left:50%; top:47%; width:.85rem; height:.5rem;
+                        border-left:3px solid #fff; border-bottom:3px solid #fff;
+                        transform:translate(-50%,-50%) rotate(-45deg) }
+  #done h2 { margin:0 0 .5rem; font-family:Cinzel,Georgia,serif; font-size:1.4rem; color:#fff;
+             text-wrap:balance }
+  #done p { color:var(--text); margin:0 0 1rem }
+  #done-stats { font-size:.95rem; color:var(--muted) }
+  .done-actions { justify-content:center }
+  .reset-hint { text-align:center }
+  #dl { font:600 14px Carlito,Calibri,Arial,sans-serif; background:var(--navy); color:#fff; border:0;
+        border-radius:8px; padding:.75rem 1.4rem; cursor:pointer; box-shadow:0 10px 24px -12px rgba(0,45,98,.7) }
+  #dl:hover { background:#012a5c }
+
+  /* Start Over, primary placement — see the design rule: #done is where a
+     student actually decides they want a better run, so this is a real
+     secondary action next to Download, not a tucked-away link like the
+     header's copy of the same control. */
+  .done-actions { display:flex; flex-wrap:wrap; align-items:flex-start; gap:.9rem }
+  .reset-done .reset-trigger { font:600 14px Carlito,Calibri,Arial,sans-serif; background:transparent;
+    color:var(--text); border:1px solid var(--panel-border); border-radius:8px; padding:.7rem 1.2rem;
+    cursor:pointer }
+  .reset-done .reset-trigger:hover { border-color:var(--muted) }
+  .reset-done .reset-confirm { max-width:26rem; background:#0b1220; border:1px solid var(--crimson);
+    border-radius:10px; padding:.9rem 1rem; margin-top:0; text-align:left }
+  .reset-done .reset-warn { margin:0 0 .7rem; font-size:.92rem; color:var(--text) }
+  .reset-hint { margin:1.1rem 0 0 !important; font-size:.85rem; color:var(--muted) }
+
+  /* The Yes/Cancel pair, shared by both placements. "Yes, clear my work" is
+     the one destructive action in this whole page, so it gets the crimson
+     treatment normally reserved for Check — everything else on this page
+     that isn't destructive stays neutral. */
+  .reset-confirm[hidden] { display:none }
+  .reset-actions { display:flex; gap:.6rem; flex-wrap:wrap }
+  .reset-yes { font:600 13px Carlito,Calibri,Arial,sans-serif; background:var(--crimson); color:#fff;
+    border:0; border-radius:6px; padding:.55rem 1rem; cursor:pointer }
+  .reset-yes:hover { background:#c22e3d }
+  .reset-cancel { font:600 13px Carlito,Calibri,Arial,sans-serif; background:transparent; color:var(--text);
+    border:1px solid var(--panel-border); border-radius:6px; padding:.55rem 1rem; cursor:pointer }
+  .reset-cancel:hover { border-color:var(--muted) }
+  .reset-trigger:focus-visible, .reset-yes:focus-visible, .reset-cancel:focus-visible {
+    outline:2px solid #fff; outline-offset:2px }
+</style></head><body>
+<header class="hero">
+  <div class="kicker">AMERICAN LEADERSHIP ACADEMY — VISTANCIA</div>
+  <div class="projweek">Project 1 &middot; Week 5</div>
+  <h1>Saving Up</h1>
+  <p class="blurb">Pick something you want. Work out how long it takes to afford it.</p>
+  <div class="progress" id="progress" role="progressbar" aria-valuemin="0" aria-valuemax="30"
+       aria-valuenow="0" aria-label="Steps completed">
+    <div class="progress-rail"><div class="progress-fill"></div></div>
+    <div class="progress-count"><b id="progress-done">0</b> of <b id="progress-total">30</b></div>
+  </div>
+  <div class="reset reset-header" id="reset-header" hidden>
+    <button type="button" class="reset-trigger">Start over</button>
+    <div class="reset-confirm" hidden>
+      <p class="reset-warn"></p>
+      <div class="reset-actions">
+        <button type="button" class="reset-yes">Yes, clear my work</button>
+        <button type="button" class="reset-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</header>
+<div class="stickybar" id="stickybar" aria-hidden="true">
+  <!-- A visual echo of the header's own progressbar (role="progressbar" lives
+       there, above), not a second one — a screen reader hearing "steps
+       completed" announced twice, once per scroll position, would be worse
+       than not having this at all. -->
+  <span class="stickybar-title">Saving Up</span>
+  <div class="stickybar-rail"><div class="stickybar-fill"></div></div>
+  <span class="stickybar-count"><b id="progress-done-mini">0</b>/<span id="progress-total-mini">30</span></span>
+</div>
+<main class="board">
+  <section class="howto">
+    <h2>How this works</h2>
+    <ul>
+      <li>Most steps ask you to type Python one line at a time. Some ask you to pick the right answer instead. Either way, you have to get it <strong>exactly</strong> right before the next one opens — capitals, quotes and brackets all count, because they count in Python.</li>
+      <li>Get it wrong and you get a hint. Wrong again, a better one. <strong>Third time, it shows you the answer</strong> and moves you on — you can never get stuck.</li>
+      <li>Your work saves as you go. Close the tab and come back — you'll be right where you left off.</li>
+      <li>When you finish, click <strong>Download my work</strong> and upload that file to Canvas.</li>
+    </ul>
+  </section>
+  <div class="track">
+    <div class="rail" aria-hidden="true">
+      <svg class="rail-svg" viewBox="0 0 2 100" preserveAspectRatio="none">
+        <path class="rail-base" d="M1,0 L1,100" pathLength="1"></path>
+        <path class="rail-fill" d="M1,0 L1,100" pathLength="1"></path>
+      </svg>
+    </div>
+    <div class="cards">
+  <div class="card" id="step0">
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step0-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">1</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step0-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">print() puts words on the screen. Whatever you put inside the quotes is what appears.</p>
+      <div class="example">
+        <pre class="code">print(&quot;Good morning&quot;)</pre>
+        <div class="out"><span class="lbl">Output</span>Good morning</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> The quotes are part of the code. Without them Python goes looking for something called Good, does not find it, and stops.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Print the words Saving Up — that's your program's title. Remember, words need quotes.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step1" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step1-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">2</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step1-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">A variable is a labeled box that remembers a value. name = value creates the box and fills it — nothing appears on screen, because storing a value and showing one are two different acts.</p>
+      <div class="example">
+        <pre class="code">price = 5</pre>
+        <div class="none">Nothing prints. That line only stores or sets something up.</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> Numbers don't get quotes. price = &quot;5&quot; stores text that only looks like a number — Python won't let you do math with it the way it will with 5. One more style note: Python code puts a space on each side of an operator like = too — goal = 220, not goal=220 — because it's easier to read. Every operator in this notebook, from = and - to comparisons like &gt;= and &lt;, follows that same spacing.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">The thing you want costs $220. Store that in a variable called goal.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step2" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step2-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">3</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step2-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same move as the line above — a new box, a new value, still nothing printed.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">You have $40 already. Store it in saved.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step3" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step3-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">4</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step3-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">print() doesn't only show quoted text — put an expression inside instead and Python works it out first, then prints the result. goal - saved becomes a number before it ever reaches the screen.</p>
+      <div class="example">
+        <pre class="code">print(10 - 3)</pre>
+        <div class="out"><span class="lbl">Output</span>7</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> No quotes around the math. print(&quot;goal - saved&quot;) would print those five words literally — quotes turn code into text, and text just sits there instead of being calculated. Same spacing habit as before, too — goal - saved, not goal-saved.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Print how much you still need. Subtract saved from goal.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step4" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step4-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">5</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step4-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">print() can take more than one thing at once — separate them with commas and Python prints each one in order, sliding exactly one space between them for you.</p>
+      <div class="example">
+        <pre class="code">print(&quot;Total:&quot;, 10 - 3)</pre>
+        <div class="out"><span class="lbl">Output</span>Total: 7</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> That one space is automatic. Type &quot;You still need &quot; with a trailing space of your own and the output ends up with two spaces instead of one.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">A bare number tells nobody anything. Print the words You still need, then goal - saved — the same expression from the line above.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step5" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step5-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">6</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step5-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Every one of these looks close to right at a glance. Quotes and capitalisation are exactly the kind of thing Python cares about and a skimming eye does not — reading each option letter by letter is the whole skill this question is testing.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Which line will print the word Hello?</div>
+    <fieldset class="options">
+      <legend class="sr-only">Answer options</legend>
+      <label class="opt">
+        <input type="radio" name="opt5" value="0">
+        <span>print(Hello)</span>
+      </label>
+      <label class="opt">
+        <input type="radio" name="opt5" value="1">
+        <span>print(&quot;Hello&quot;)</span>
+      </label>
+      <label class="opt">
+        <input type="radio" name="opt5" value="2">
+        <span>Print(&quot;Hello&quot;)</span>
+      </label>
+    </fieldset>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step6" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step6-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">7</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step6-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">if starts a question. Whatever comes after it works out to True or False, and Python only runs the indented lines underneath when the answer is True. The colon isn't decoration — it's Python's way of saying &quot;the rules for what happens next start here.&quot; &gt;= means &quot;at least as big as&quot;: saved equal to goal counts as true too, not just saved bigger.</p>
+      <div class="example">
+        <pre class="code">temp = 100
+if temp &gt;= 90:
+    print(&quot;Hot&quot;)</pre>
+        <div class="out"><span class="lbl">Output</span>Hot</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> A single = stores a value — that's assignment, from Day 1. Two together, ==, ask &quot;are these equal?&quot; Write if saved = goal: by mistake and Python stops you immediately: that spot only accepts a question, not an instruction to store something. Same spacing habit as Day 1's operators, too — saved &gt;= goal, not saved&gt;=goal.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Start a question: is saved at least as big as goal? End the line with a colon.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step7" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step7-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">8</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step7-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">The four spaces before print aren't for looks — they're what tells Python this line belongs to the if above it. Every line indented the same amount underneath the colon is &quot;inside&quot; that if; the first line back at the left edge is &quot;outside&quot; it again.</p>
+      <div class="example">
+        <pre class="code">if 5 &gt; 2:
+    print(&quot;Yes&quot;)</pre>
+        <div class="out"><span class="lbl">Output</span>Yes</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> Every line in the same block has to be indented by the exact same amount. Python doesn't care whether you use two spaces or four — it cares that every line inside one block matches. Mix them and Python refuses to run at all.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces and print the words Go buy it — that's what happens when it is true.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step8" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step8-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">9</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step8-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">else catches everything the if didn't. It needs no condition of its own — it only runs when the if above it worked out False — which is why it sits back at the left edge, lined up with if rather than indented under it.</p>
+      <div class="example">
+        <pre class="code">temp = 60
+if temp &gt;= 90:
+    print(&quot;Hot&quot;)
+else:
+    print(&quot;Not hot&quot;)</pre>
+        <div class="out"><span class="lbl">Output</span>Not hot</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> else never gets its own condition — you can't write else saved &lt; goal:. Need another condition in between? That's elif, and Day 3 is where it shows up.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Now the other case. Type else and a colon, back at the left edge.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step9" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step9-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">10</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step9-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same indentation rule as the if's body — four spaces, because this line belongs to else the same way that one belonged to if.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces and print the words Not yet — that's what happens when it is false.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step10" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step10-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">11</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step10-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">One equals sign assigns a value — it changes something. Two together, ==, compare two values and hand back True or False without changing anything. Mixing them up is one of the most common mistakes in Python, and Python will not always catch it for you.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Which line correctly checks whether saved and goal are equal, without changing either one?</div>
+    <fieldset class="options">
+      <legend class="sr-only">Answer options</legend>
+      <label class="opt">
+        <input type="radio" name="opt10" value="0">
+        <span>saved = goal</span>
+      </label>
+      <label class="opt">
+        <input type="radio" name="opt10" value="1">
+        <span>saved == goal</span>
+      </label>
+      <label class="opt">
+        <input type="radio" name="opt10" value="2">
+        <span>saved =! goal</span>
+      </label>
+    </fieldset>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step11" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step11-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">12</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step11-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same question as Monday. Python doesn't remember that you already asked it inside a different if block — every if is independent, so you write the condition again from scratch.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Ask the same question again: is saved at least as big as goal? End the line with a colon.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step12" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step12-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">13</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step12-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same as Monday too — this line only runs when the if directly above it is True.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces and print the words Go buy it — that's what happens when it is true.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step13" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step13-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">14</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step13-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">elif (&quot;else if&quot;) adds another question, but it only gets checked when everything above it worked out False. You can chain as many elif lines as you need between an if and an else — Python checks them top to bottom and stops at the first one that's True. / divides, so goal / 2 is exactly half of goal.</p>
+      <div class="example">
+        <pre class="code">score = 75
+if score &gt;= 90:
+    print(&quot;A&quot;)
+elif score &gt;= 70:
+    print(&quot;B&quot;)
+else:
+    print(&quot;C&quot;)</pre>
+        <div class="out"><span class="lbl">Output</span>B</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> Order matters. Python stops at the first True line it finds and skips the rest — put a wide condition too early and it can catch cases a later, more specific line was supposed to handle. Same spacing habit applies to &gt; and / as well — saved &gt; goal / 2, not saved&gt;goal/2.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Add a middle case: type elif, then whether saved is more than half of goal. End with a colon.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step14" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step14-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">15</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step14-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same indentation rule again — four spaces because this line belongs to the elif directly above it.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces and print the words Getting there — that's what happens in that middle case.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step15" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step15-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">16</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step15-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same else as Day 2. Still no condition of its own — it fires only when every if and elif above it came back False.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Type else and a colon for everything that's left over, back at the left edge.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step16" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step16-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">17</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step16-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">This is the branch that actually runs: saved is 40 and goal / 2 is 110, so saved &gt; goal / 2 is False, the elif is skipped, and this final else is what prints.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces and print the words Not close yet — the last case.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step17" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step17-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">18</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step17-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same pattern as Day 1 — a new box, pay, remembering 15. Nothing new here; the loop below is where it gets used.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">You can save $15 a week. Store that in a variable called pay.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step18" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step18-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">19</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step18-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">weeks starts at 0 on purpose — it's about to count up by one every time the loop below runs. A counter has to start somewhere true, and zero weeks have passed before the loop has even begun.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">You haven't saved any weeks yet. Store 0 in a variable called weeks.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step19" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step19-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">20</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step19-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">while works like if, but it doesn't check its question just once. After the indented lines under it finish running, Python goes right back up to the while line and checks the condition again — and again — running that block over and over for as long as the answer stays True.</p>
+      <div class="example">
+        <pre class="code">count = 0
+while count &lt; 3:
+    print(count)
+    count = count + 1</pre>
+        <div class="out"><span class="lbl">Output</span>0
+1
+2</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> saved &lt; goal has to become False eventually, or this runs forever. That only happens if something inside the loop changes saved — which is exactly what the next line does. Skip that line and you've built an infinite loop that never lets the page respond again. Same spacing habit as always — saved &lt; goal, not saved&lt;goal.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Start a loop: keep going as long as saved is less than goal. End the line with a colon.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step20" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step20-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">21</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step20-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">This is the line that makes the loop actually finish. saved = saved + pay works out the right side first — the old saved plus pay — and then stores that result back into saved, overwriting the old number. Every pass through the loop, saved gets a little bigger, until eventually saved &lt; goal turns False.</p>
+      <div class="example">
+        <pre class="code">total = 5
+total = total + 2
+print(total)</pre>
+        <div class="out"><span class="lbl">Output</span>7</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> = here isn't math-class &quot;equals.&quot; saved = saved + pay would be nonsense as an equation — nothing equals itself plus 15 — but it's a completely ordinary instruction to a computer: compute the right side, then store it on the left. Same spacing habit again — saved + pay, not saved+pay.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces. Add pay to saved and store it back in saved.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step21" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step21-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">22</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step21-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same move as the line above, on the counter instead of the balance. weeks = weeks + 1 adds exactly one every pass, which is how weeks ends up counting the number of times the loop ran.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces. Add one to weeks.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step22" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step22-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">23</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step22-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">This print sits inside the loop, so it runs on every single pass — one line of code, but the loop runs it 12 times before saved finally reaches goal, so 12 lines of output appear, each with that pass's own weeks and saved.</p>
+      <div class="example">
+        <pre class="code">n = 0
+while n &lt; 3:
+    print(&quot;Step&quot;, n)
+    n = n + 1</pre>
+        <div class="out"><span class="lbl">Output</span>Step 0
+Step 1
+Step 2</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> The &quot;-&quot; here is just a piece of text, same as any other comma-separated piece — Python doesn't treat it specially. It's only there so the line reads Week 1 - 55 instead of Week 1 55.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces and print, in order: the word Week, then the weeks variable, a dash -, then the saved variable.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step23" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step23-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">24</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step23-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Back at the left edge, this line is no longer part of the loop — it runs exactly once, after the loop has completely finished, which only happens once saved is no longer less than goal. weeks still holds whatever it counted up to.</p>
+      <p class="watch"><span class="tag">Watch out</span> If this line stayed indented, it would be inside the loop instead of after it, and Python would try to run it every single pass instead of once at the end.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Back at the left edge — the loop is over. Print, in order: the words It took, then the weeks variable, then the word weeks.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step24" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step24-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">25</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step24-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">A while loop does not count passes by itself — it rechecks its condition every single time, top to bottom, and stops the instant that condition comes back False. If nothing inside the loop changes the value the condition depends on, it never stops on its own. That's what an infinite loop actually is: not a loop that runs forever on purpose, but one where nothing ever made the condition False.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Select every statement that is true about why while saved &lt; goal: eventually stops looping.</div>
+    <p class="instruction">Select every one that applies — there may be more than one.</p>
+    <fieldset class="options">
+      <legend class="sr-only">Answer options</legend>
+      <label class="opt">
+        <input type="checkbox" value="0">
+        <span>saved = saved + pay makes saved bigger every pass, moving it toward goal.</span>
+      </label>
+      <label class="opt">
+        <input type="checkbox" value="1">
+        <span>The loop is hard-coded to stop after 12 passes.</span>
+      </label>
+      <label class="opt">
+        <input type="checkbox" value="2">
+        <span>Eventually saved &lt; goal becomes False, and that is the only thing that stops a while loop.</span>
+      </label>
+      <label class="opt">
+        <input type="checkbox" value="3">
+        <span>weeks = weeks + 1 is what the while line checks to decide whether to stop.</span>
+      </label>
+    </fieldset>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step25" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step25-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">26</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step25-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">A list holds more than one value in a single box, in order, separated by commas inside square brackets. spent isn't one number — it's a sequence of three, and the next step walks through them one at a time.</p>
+      <div class="example">
+        <pre class="code">print([3, 6, 9])</pre>
+        <div class="out"><span class="lbl">Output</span>[3, 6, 9]</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> Square brackets, not parentheses. spent = (12, 8, 25) builds a different kind of value entirely — brackets are what make it a list.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">You spent money three different times: $12, $8, and $25. Store them in a list called spent.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step26" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step26-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">27</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step26-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">A for loop already knows how many times to run — once for every item in the list — so there's no condition to write and no counter to update by hand, unlike while. Each time through, item holds the next value from spent: first 12, then 8, then 25.</p>
+      <div class="example">
+        <pre class="code">colors = [&quot;red&quot;, &quot;green&quot;]
+for c in colors:
+    print(c)</pre>
+        <div class="out"><span class="lbl">Output</span>red
+green</div>
+      </div>
+      <p class="watch"><span class="tag">Watch out</span> item is a name Python lets you choose, not a fixed keyword — in your own programs it could be called anything. Here it has to be exactly item, both because that's what this step is asking for and because whatever you call it has to match exactly what you type inside the loop body on the next two lines, or Python won't know what you mean.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Start a loop that goes through spent one value at a time — name the loop variable item. End the line with a colon.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step27" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step27-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">28</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step27-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same reassignment move from Thursday, running in reverse — saved = saved - item takes item back out of the balance instead of adding to it.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces. Subtract item from saved and store it back in saved.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step28" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step28-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">29</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step28-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Same idea as Thursday's loop print — one line of code, three passes through the list, three lines of output, each with that pass's own item and running saved.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Indent four spaces and print, in order: the words After spending, then the item variable, then the words you have, then the saved variable.</div>
+      <textarea rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" aria-label="Type your answer"></textarea>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+  <div class="card" id="step29" hidden>
+    <button type="button" class="card-summary" aria-expanded="false" aria-controls="step29-body">
+      <span class="sum-tick" aria-hidden="true"></span>
+      <span class="sum-index">30</span>
+      <span class="sum-line"></span>
+      <span class="sum-output"></span>
+      <span class="sum-chev" aria-hidden="true"></span>
+    </button>
+    <div class="card-body" id="step29-body">
+      <span class="now-badge">Now</span>
+    <div class="teach">
+      <p class="says">Indentation is not decoration — it's what tells Python which lines belong to the loop and which don't. Every line indented under for item in spent: runs once per item; anything back at the left edge, including the for line itself, runs exactly once no matter how many items are in the list.</p>
+    </div>
+    <hr class="divider">
+    <div class="turn">Your turn</div>
+      <div class="prompt">Select every line below that is indented — the lines that belong to the loop's body and run once per item.</div>
+    <p class="instruction">Select every one that applies — there may be more than one.</p>
+    <fieldset class="options">
+      <legend class="sr-only">Answer options</legend>
+      <label class="opt">
+        <input type="checkbox" value="0">
+        <span>spent = [12, 8, 25]</span>
+      </label>
+      <label class="opt">
+        <input type="checkbox" value="1">
+        <span>for item in spent:</span>
+      </label>
+      <label class="opt">
+        <input type="checkbox" value="2">
+        <span>    saved = saved - item</span>
+      </label>
+      <label class="opt">
+        <input type="checkbox" value="3">
+        <span>    print(&quot;After spending&quot;, item, &quot;you have&quot;, saved)</span>
+      </label>
+    </fieldset>
+      <button type="button" class="check-btn">Check</button>
+      <div class="msg" role="status"></div>
+    </div>
+  </div>
+    </div>
+  </div>
+  <div id="done" hidden>
+    <div class="done-badge" aria-hidden="true"></div>
+    <h2>That is the whole cycle.</h2>
+    <p id="done-stats"></p>
+    <p>Download your work, then upload the file to the assignment on Canvas.</p>
+    <div class="done-actions">
+      <button type="button" id="dl">Download my work</button>
+  <div class="reset reset-done" id="reset-done">
+    <button type="button" class="reset-trigger">Start over</button>
+    <div class="reset-confirm" hidden>
+      <p class="reset-warn"></p>
+      <div class="reset-actions">
+        <button type="button" class="reset-yes">Yes, clear my work</button>
+        <button type="button" class="reset-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+    </div>
+    <p class="reset-hint">Not happy with this run? Starting over keeps a record of this attempt so your improvement still shows.</p>
+  </div>
+</main>
+<script>
+const normalize = function normalize(text) {
+  return text
+    // Line endings first, before anything else looks at "the end of a line."
+    // A student pasting from Windows, from a Google Doc, or from many
+    // editors gets \r\n instead of \n; a bare \r (old Mac) is rarer but
+    // costs nothing extra to cover with the same pass. Collapsing to \n up
+    // front means every rule below only ever has to reason about one kind
+    // of line ending instead of quietly mishandling the other.
+    .replace(/\r\n?/g, "\n")
+    // Smart quotes: Chromebooks (and Google Docs, and iOS) auto-convert
+    // straight quotes to curly ones. The student typed a straight quote;
+    // the platform lied to them. Treat both spellings as the same character.
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    // Non-breaking space (U+00A0): Google Docs inserts these freely, and on
+    // screen it is pixel-identical to a normal space. Written as an escape
+    // rather than pasted as a literal byte, so the invisible character this
+    // function exists to forgive doesn't itself sit invisibly in the source.
+    // Runs before the trailing-whitespace trim below so a trailing NBSP is
+    // caught by that rule too, not just ones in the middle of a line.
+    .replace(/\u00A0/g, " ")
+    // Trailing spaces/tabs at the end of a line are invisible in most editors
+    // and carry no meaning in Python — unlike leading whitespace, which IS
+    // the indentation the lesson is testing.
+    .replace(/[ \t]+$/gm, "")
+    // A missing or extra newline at the very end of the file is an artifact
+    // of how the student's editor saves, not something they typed on purpose.
+    .replace(/\n+$/, "");
+};
+const firstDiff = function firstDiff(attempt, target) {
+  const len = Math.min(attempt.length, target.length);
+  for (let i = 0; i < len; i++) {
+    if (attempt[i] !== target[i]) return i + 1;
+  }
+  if (attempt.length === target.length) return -1;
+  return len + 1;
+};
+const category  = function category(attempt, target) {
+  // case: same word, wrong shift key. Checked first because it is the
+  // cheapest, most specific explanation available.
+  if (attempt !== target && attempt.toLowerCase() === target.toLowerCase()) {
+    return "case";
+  }
+
+  // quote: the student used the other quote character throughout. Checked
+  // before bracket/indent because a quote-swap can also throw off bracket
+  // counting inside a string like ('hi)') — but "match the kind I used" is
+  // the fix, not "check your brackets".
+  const swapped = attempt.replace(/['"]/g, (c) => (c === "'" ? '"' : "'"));
+  if (attempt !== target && swapped === target) {
+    return "quote";
+  }
+
+  // bracket: count opens minus closes for each bracket family and compare
+  // to the target's balance. A mismatch means one is missing or extra,
+  // regardless of where in the line it happened.
+  const pairs = [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"],
+  ];
+  for (const [open, close] of pairs) {
+    const balance = (s) =>
+      s.split("").filter((c) => c === open).length -
+      s.split("").filter((c) => c === close).length;
+    if (balance(attempt) !== balance(target)) {
+      return "bracket";
+    }
+  }
+
+  // indent: leading whitespace is the one part of a Python line where
+  // whitespace IS the logic, so a length mismatch there is its own category
+  // rather than being folded into "spelling".
+  const leading = (s) => s.match(/^[ \t]*/)[0].length;
+  if (leading(attempt) !== leading(target)) {
+    return "indent";
+  }
+
+  // Everything that isn't one of the above IS a spelling problem — a
+  // missing letter, a transposed pair, a wrong variable name. Fallback, not
+  // a diagnosis: this is what's left after the more specific, more
+  // actionable explanations were ruled out.
+  return "spelling";
+};
+const hintFor   = function hintFor(attempt, target, attemptNumber, normalize, accept) {
+  const norm = typeof normalize === "function" ? normalize : (s) => s;
+  const normAttempt = norm(attempt);
+
+  // Every string this attempt could be judged correct against: the
+  // canonical target plus any author-approved alternatives. `accept` is
+  // optional, so a step that doesn't carry one collapses this to exactly
+  // the single-candidate behaviour this function had before `accept`
+  // existed — nothing below changes shape for those steps.
+  const alternatives = Array.isArray(accept) ? accept : [];
+  const candidates = [target, ...alternatives].map(norm);
+
+  if (candidates.includes(normAttempt)) {
+    return { correct: true, reveal: false, message: "Correct." };
+  }
+
+  if (attemptNumber >= 3) {
+    // Always the RAW canonical target — never an alternative, even when the
+    // student's wrong attempt was closer to one. `target` stays canonical
+    // for exactly this reason (see the design rule in saving-up.mjs):
+    // different students who end up here by different wrong paths, and who
+    // then compare screens with a neighbour, have to see the identical
+    // line. Local kindness (showing whichever form they were closer to)
+    // would buy nothing and would break that consistency.
+    return {
+      correct: false,
+      reveal: true,
+      message: "Here it is — type it exactly:\n" + target,
+    };
+  }
+
+  // Hint against whichever candidate the attempt is closest to, not always
+  // the canonical target. A student who types "saved = pay+saved" (missing
+  // the spaces around +) is plainly attempting the accepted
+  // "saved = pay + saved" form — diffing that against the canonical
+  // "saved = saved + pay" instead would land on character 9, deep inside a
+  // word-order difference the student never intended to make, which is a
+  // baffling hint. Diffing against the accepted form they were evidently
+  // typing points at the missing spaces they can actually go fix.
+  // "Closest" is a simple count of differing characters, position by
+  // position, treating a length mismatch as extra differing characters past
+  // the shorter string's end — not true edit distance (no
+  // insertion/deletion alignment), but cheap, dependency-free, and good
+  // enough to tell "the form they're clearly attempting" from "the other
+  // one." Ties keep the earlier candidate, so an exact tie favours the
+  // canonical target (index 0) over an alternative.
+  const diffCount = (a, b) => {
+    const len = Math.max(a.length, b.length);
+    let n = 0;
+    for (let i = 0; i < len; i++) if (a[i] !== b[i]) n++;
+    return n;
+  };
+  let normTarget = candidates[0];
+  let bestDist = diffCount(normAttempt, candidates[0]);
+  for (let i = 1; i < candidates.length; i++) {
+    const d = diffCount(normAttempt, candidates[i]);
+    if (d < bestDist) {
+      bestDist = d;
+      normTarget = candidates[i];
+    }
+  }
+
+  const pos = firstDiff(normAttempt, normTarget);
+
+  if (attemptNumber <= 1) {
+    return {
+      correct: false,
+      reveal: false,
+      message: `Character ${pos} isn't right.`,
+    };
+  }
+
+  const cat = category(normAttempt, normTarget);
+
+  if (cat !== "spelling") {
+    const messages = {
+      case: "Check your capitalisation.",
+      quote: "Check your quote marks — match the kind I used.",
+      bracket: "Check your brackets — one is missing or extra.",
+      indent: "Check your indentation. Python counts the spaces at the start of a line.",
+    };
+    return { correct: false, reveal: false, message: messages[cat] };
+  }
+
+  // Spelling is the fallback category, so it's also the one a genuinely
+  // lost student hits most often — and "look closely at the spelling" adds
+  // nothing on try 2 that "Character N isn't right" didn't already say on
+  // try 1. What IS new, and still short of the answer, is naming what THEY
+  // typed at that position: it sends their eye to the exact spot without
+  // supplying the correct character. Space/tab/newline are named in words
+  // rather than quoted literally, because a quoted whitespace character is
+  // invisible on screen — quoting it would just reproduce the "look
+  // closely" problem one level down.
+  const idx = pos - 1;
+  if (idx >= normAttempt.length) {
+    // The attempt ran out before reaching this position — there is no
+    // character to point at. That's not a spelling mistake, it's an
+    // unfinished line, and the message has to say that instead of claiming
+    // a character is wrong when none was typed.
+    return {
+      correct: false,
+      reveal: false,
+      message: `Character ${pos} isn't right — you haven't reached that far yet. Keep typing.`,
+    };
+  }
+
+  const ch = normAttempt[idx];
+  const shown =
+    ch === " " ? "a space"
+    : ch === "\t" ? "a tab"
+    : ch === "\n" ? "a line break"
+    : `“${ch}”`;
+
+  return {
+    correct: false,
+    reveal: false,
+    message: `Character ${pos} isn't right. You typed ${shown} there.`,
+  };
+};
+const choiceHintFor = function choiceHintFor(selected, options, attemptNumber) {
+  const sel = Array.from(new Set(Array.isArray(selected) ? selected : [])).sort((a, b) => a - b);
+  const correctIdx = options
+    .map((o, i) => (o && o.correct ? i : -1))
+    .filter((i) => i > -1)
+    .sort((a, b) => a - b);
+  const isMulti = correctIdx.length > 1;
+  const sameSet = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+  // --- "choice": exactly one correct option, exact index match -----------
+  if (!isMulti) {
+    const correctOne = correctIdx[0];
+    if (sel.length === 1 && sel[0] === correctOne) {
+      return { correct: true, reveal: false, message: "Correct." };
+    }
+    // Third-try reveal is the same safety requirement as hintFor's: no
+    // student is ever permanently stuck on a question they cannot pass.
+    // reveal stays true for every attempt after the third too, same as
+    // hintFor — a stuck student does not get re-trapped on attempt 4 or 9.
+    if (attemptNumber >= 3) {
+      return { correct: false, reveal: true, message: "Here it is:\n" + options[correctOne].text };
+    }
+    if (attemptNumber <= 1) {
+      return { correct: false, reveal: false, message: "Not that one. Read them again." };
+    }
+    // Second wrong attempt: the option they actually picked gets to teach,
+    // via its authored `why` — that's the whole reason every wrong option
+    // in a choice/multi step is required to carry one. If they clicked
+    // Check with nothing selected, or the picked option has no `why`
+    // authored, fall back to a generic nudge rather than showing nothing.
+    const chosen = sel.length === 1 ? options[sel[0]] : null;
+    return {
+      correct: false,
+      reveal: false,
+      message: chosen && chosen.why ? chosen.why : "Look at each option again — one of them is exactly right.",
+    };
+  }
+
+  // --- "multi": more than one correct option, exact SET match ------------
+  if (sameSet(sel, correctIdx)) {
+    return { correct: true, reveal: false, message: "Correct." };
+  }
+  if (attemptNumber >= 3) {
+    const list = correctIdx.map((i) => options[i].text).join("\n");
+    return { correct: false, reveal: true, message: "Here they are:\n" + list };
+  }
+
+  const correctSet = new Set(correctIdx);
+  const rightPicked = sel.filter((i) => correctSet.has(i)).length;
+  const wrongPicked = sel.filter((i) => !correctSet.has(i));
+  const totalCorrect = correctIdx.length;
+  const missing = totalCorrect - rightPicked;
+
+  // The try-1 message has to be accurate for every combination a student
+  // can produce: too few (some correct ones missing, nothing extra), too
+  // many (every correct one picked, plus extras that don't belong), and
+  // right-count-but-wrong-members (some missing AND some extra at once —
+  // e.g. "2 of 3 right, and one you picked does not belong"). It says how
+  // many they have right and which DIRECTION they're off (over vs under)
+  // without ever naming which specific option is wrong — that's what
+  // attempt 2 is for.
+  let summary;
+  if (wrongPicked.length === 0) {
+    // Pure under-selection: everything picked so far is right, but not
+    // everything right has been picked yet.
+    summary = `You have ${rightPicked} of the ${totalCorrect} right, and you have not selected everything that belongs yet.`;
+  } else if (missing === 0) {
+    // Pure over-selection: every correct option is picked, plus extras
+    // that shouldn't be there.
+    summary = `You have all ${totalCorrect} right ones, but you also picked ${
+      wrongPicked.length === 1 ? "one that does" : wrongPicked.length + " that do"
+    } not belong.`;
+  } else {
+    // Mixed: some right, some missing, and some wrong picked at the same
+    // time — this covers "right count, wrong members" as well as "picked
+    // too many and still missing some."
+    summary = `You have ${rightPicked} of the ${totalCorrect} right, and ${
+      wrongPicked.length === 1 ? "one" : wrongPicked.length
+    } you picked ${wrongPicked.length === 1 ? "does" : "do"} not belong.`;
+  }
+
+  if (attemptNumber <= 1) {
+    return { correct: false, reveal: false, message: summary };
+  }
+
+  // Second wrong attempt: add the `why` of one wrongly-selected option, if
+  // any of them has one. If everything they picked was actually correct
+  // (they're only under-selecting, nothing to blame) there is no wrong
+  // option to explain, so the summary alone is what they get again.
+  const withWhy = wrongPicked.map((i) => options[i]).find((o) => o && o.why);
+  return {
+    correct: false,
+    reveal: false,
+    message: withWhy ? summary + " " + withWhy.why : summary,
+  };
+};
+const buildReportHTML = function buildReportHTML(record, meta, b64, colors) {
+  const esc = (s) =>
+    String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  const steps = record.steps || [];
+  const completed = steps.filter((s) => s.done).length;
+  const revealed = steps.filter((s) => s.revealed).length;
+
+  // `runs` is the archive Start Over leaves behind (see archiveRun, above) —
+  // absent entirely on a record from before this feature existed, which is
+  // "zero previous attempts," not an error. This is the whole point of
+  // collecting the history at all: "18/30 with 9 revealed, then 26/30 with 3
+  // revealed" makes a student who went back and did it properly legible to
+  // Colton at a glance, without opening a single attempt's raw data.
+  const runs = Array.isArray(record.runs) ? record.runs : [];
+  const attemptNumber = runs.length + 1;
+
+  // Minutes, not raw milliseconds — nobody reading a grading report benefits
+  // from "1284231ms," and this report is read by a human first (see the
+  // function's own doc comment below: "one file, two audiences"). Dependency
+  // -free on purpose: this function has to run identically whether it's
+  // called here at build time in Node or inlined into a student's browser
+  // (see the HARD CONSTRAINT note atop this file), so it can't reach for
+  // Intl.RelativeTimeFormat or anything else that could disagree between the
+  // two runtimes.
+  const fmtDuration = (ms) => {
+    if (!ms || ms < 0) return "under a minute";
+    const mins = Math.round(ms / 60000);
+    if (mins < 1) return "under a minute";
+    if (mins === 1) return "1 minute";
+    if (mins < 60) return mins + " minutes";
+    const hrs = Math.floor(mins / 60);
+    const rem = mins % 60;
+    return hrs + "h" + (rem ? " " + rem + "m" : "");
+  };
+
+  // Whatever the browser's own locale renders a Date as. This runs on
+  // Colton's machine when he opens the file, not the student's — a plain
+  // human-legible timestamp is what he needs here, not a portable format.
+  const fmtWhen = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? "" : d.toLocaleString();
+  };
+
+  // The at-a-glance line, built only when there IS a history to show — a
+  // first-ever attempt (runs.length === 0) gets no "Attempt 1" noise, per
+  // the design rule that this report should read exactly like a normal
+  // submission until a student has actually gone back and tried again.
+  const historyLine =
+    runs.length === 0
+      ? ""
+      : "Attempt " + attemptNumber + " &middot; previous " +
+        (runs.length === 1 ? "attempt" : "attempts") + ": " +
+        runs.map((r) => r.done + "/" + r.total + " with " + r.revealed + " revealed").join(", then ") + ".";
+
+  const historyRows = runs
+    .map((r, i) =>
+      "<tr><td>" + (i + 1) + "</td>" +
+      "<td>" + r.done + " / " + r.total + "</td>" +
+      "<td>" + r.revealed + "</td>" +
+      "<td>" + esc(fmtDuration(r.durationMs)) + "</td>" +
+      "<td>" + esc(fmtWhen(r.endedAt)) + "</td></tr>"
+    )
+    .join("");
+
+  const historyTable =
+    runs.length === 0
+      ? ""
+      : "<h2>Previous attempts</h2><table><tr><th>Attempt</th><th>Completed</th><th>Revealed</th>" +
+        "<th>Time on task</th><th>When</th></tr>" + historyRows + "</table>";
+
+  const rows = steps
+    .map((s, i) => {
+      const attempts = s.attempts || [];
+      const last = attempts[attempts.length - 1];
+      const finalAnswer = last ? last.text : "";
+      return (
+        "<tr><td>" + (i + 1) + "</td>" +
+        "<td>" + attempts.length + "</td>" +
+        "<td>" + (s.revealed ? "yes" : "no") + "</td>" +
+        "<td><code>" + esc(finalAnswer) + "</code></td></tr>"
+      );
+    })
+    .join("");
+
+  // The closing script tag below is written with a backslash before the slash, on
+  // purpose — and so is this comment's every mention of it, spelled with a space so
+  // the literal nine-character sequence never appears here either. As a runtime
+  // VALUE the backslash does nothing (backslash-slash is just a slash), so a human
+  // opening this downloaded file gets a normal, correctly-closed tag. But this
+  // function's SOURCE TEXT is also embedded verbatim inside the notebook page's own
+  // script block (see renderNotebook), and an HTML tokenizer scanning THAT page's
+  // raw text ends a script element the instant it sees "< /script" (no space, case
+  // insensitive) anywhere in it — including inside a string, or a comment, a JS
+  // engine would parse just fine. The backslash (and, here, the space) breaks up
+  // that exact byte sequence in the source without changing what the code does.
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(meta.title)} — submission</title>
+<style>
+  body { font:15px/1.6 Carlito,Calibri,Arial,sans-serif; max-width:46rem; margin:2rem auto;
+         padding:0 1.25rem; color:#222 }
+  h1 { font-family:Cinzel,Georgia,serif; color:#${colors.navy}; margin:0 0 .2rem }
+  .summary { margin:.5rem 0 1.3rem; font-size:1rem }
+  table { width:100%; border-collapse:collapse }
+  th { background:#${colors.navy}; color:#fff; text-align:left; padding:6px 9px; font-size:13px }
+  td { border:1px solid #${colors.silver}; padding:6px 9px; vertical-align:top; font-size:13.5px }
+  code { font:13px/1.5 ui-monospace, SFMono-Regular, Consolas, "DejaVu Sans Mono", Menlo, monospace;
+       white-space:pre-wrap; word-break:break-word }
+  .history { margin:0 0 .6rem; font-size:.95rem; color:#444 }
+  h2 { font-family:Cinzel,Georgia,serif; color:#${colors.navy}; font-size:1rem; margin:1.6rem 0 .5rem }
+</style></head><body>
+<h1>${esc(meta.title)}</h1>
+${historyLine ? `<p class="history">${historyLine}</p>` : ""}
+<p class="summary"><b>${completed} of ${steps.length}</b> steps completed &middot; <b>${revealed}</b> answer(s) revealed</p>
+${historyTable}
+<h2>This attempt</h2>
+<table><tr><th>Step</th><th>Attempts</th><th>Revealed</th><th>Final answer</th></tr>${rows}</table>
+<script type="application/json" id="record">${b64}<\/script>
+</body></html>`;
+};
+const archiveRun = function archiveRun(record, freshSteps, endedAt) {
+  const steps = Array.isArray(record.steps) ? record.steps : [];
+  const done = steps.filter((s) => s && s.done).length;
+  const revealed = steps.filter((s) => s && s.revealed).length;
+  const startedAt = record.started;
+  const startMs = Date.parse(startedAt);
+  const endMs = Date.parse(endedAt);
+  const durationMs = isNaN(startMs) || isNaN(endMs) ? 0 : endMs - startMs;
+
+  const runs = (Array.isArray(record.runs) ? record.runs : []).slice();
+  runs.push({
+    total: steps.length,
+    done: done,
+    revealed: revealed,
+    startedAt: startedAt,
+    endedAt: endedAt,
+    durationMs: durationMs,
+  });
+
+  return Object.assign({}, record, { runs: runs, steps: freshSteps, started: endedAt });
+};
+const STEPS = [{"prompt":"Print the words Saving Up — that's your program's title. Remember, words need quotes.","answer":"print(\"Saving Up\")","output":"Saving Up","teach":{"says":"print() puts words on the screen. Whatever you put inside the quotes is what appears.","example":"print(\"Good morning\")","shows":"Good morning","watch":"The quotes are part of the code. Without them Python goes looking for something called Good, does not find it, and stops."},"day":1,"dayTitle":"Numbers you can name"},{"prompt":"The thing you want costs $220. Store that in a variable called goal.","answer":"goal = 220","output":null,"teach":{"says":"A variable is a labeled box that remembers a value. name = value creates the box and fills it — nothing appears on screen, because storing a value and showing one are two different acts.","example":"price = 5","shows":null,"watch":"Numbers don't get quotes. price = \"5\" stores text that only looks like a number — Python won't let you do math with it the way it will with 5. One more style note: Python code puts a space on each side of an operator like = too — goal = 220, not goal=220 — because it's easier to read. Every operator in this notebook, from = and - to comparisons like >= and \u003C, follows that same spacing."},"day":1,"dayTitle":"Numbers you can name"},{"prompt":"You have $40 already. Store it in saved.","answer":"saved = 40","output":null,"teach":{"says":"Same move as the line above — a new box, a new value, still nothing printed."},"day":1,"dayTitle":"Numbers you can name"},{"prompt":"Print how much you still need. Subtract saved from goal.","answer":"print(goal - saved)","output":"180","teach":{"says":"print() doesn't only show quoted text — put an expression inside instead and Python works it out first, then prints the result. goal - saved becomes a number before it ever reaches the screen.","example":"print(10 - 3)","shows":"7","watch":"No quotes around the math. print(\"goal - saved\") would print those five words literally — quotes turn code into text, and text just sits there instead of being calculated. Same spacing habit as before, too — goal - saved, not goal-saved."},"day":1,"dayTitle":"Numbers you can name"},{"prompt":"A bare number tells nobody anything. Print the words You still need, then goal - saved — the same expression from the line above.","answer":"print(\"You still need\", goal - saved)","output":"You still need 180","teach":{"says":"print() can take more than one thing at once — separate them with commas and Python prints each one in order, sliding exactly one space between them for you.","example":"print(\"Total:\", 10 - 3)","shows":"Total: 7","watch":"That one space is automatic. Type \"You still need \" with a trailing space of your own and the output ends up with two spaces instead of one."},"day":1,"dayTitle":"Numbers you can name"},{"kind":"choice","prompt":"Which line will print the word Hello?","options":[{"text":"print(Hello)","why":"No quotes, so Python looks for a variable called Hello and does not find one."},{"text":"print(\"Hello\")","correct":true},{"text":"Print(\"Hello\")","why":"Capital P. Python is case-sensitive and only knows print."}],"teach":{"says":"Every one of these looks close to right at a glance. Quotes and capitalisation are exactly the kind of thing Python cares about and a skimming eye does not — reading each option letter by letter is the whole skill this question is testing."},"day":1,"dayTitle":"Numbers you can name"},{"prompt":"Start a question: is saved at least as big as goal? End the line with a colon.","answer":"if saved >= goal:","output":null,"teach":{"says":"if starts a question. Whatever comes after it works out to True or False, and Python only runs the indented lines underneath when the answer is True. The colon isn't decoration — it's Python's way of saying \"the rules for what happens next start here.\" >= means \"at least as big as\": saved equal to goal counts as true too, not just saved bigger.","example":"temp = 100\nif temp >= 90:\n    print(\"Hot\")","shows":"Hot","watch":"A single = stores a value — that's assignment, from Day 1. Two together, ==, ask \"are these equal?\" Write if saved = goal: by mistake and Python stops you immediately: that spot only accepts a question, not an instruction to store something. Same spacing habit as Day 1's operators, too — saved >= goal, not saved>=goal."},"day":2,"dayTitle":"Asking a question"},{"prompt":"Indent four spaces and print the words Go buy it — that's what happens when it is true.","answer":"    print(\"Go buy it\")","output":null,"teach":{"says":"The four spaces before print aren't for looks — they're what tells Python this line belongs to the if above it. Every line indented the same amount underneath the colon is \"inside\" that if; the first line back at the left edge is \"outside\" it again.","example":"if 5 > 2:\n    print(\"Yes\")","shows":"Yes","watch":"Every line in the same block has to be indented by the exact same amount. Python doesn't care whether you use two spaces or four — it cares that every line inside one block matches. Mix them and Python refuses to run at all."},"day":2,"dayTitle":"Asking a question"},{"prompt":"Now the other case. Type else and a colon, back at the left edge.","answer":"else:","output":null,"teach":{"says":"else catches everything the if didn't. It needs no condition of its own — it only runs when the if above it worked out False — which is why it sits back at the left edge, lined up with if rather than indented under it.","example":"temp = 60\nif temp >= 90:\n    print(\"Hot\")\nelse:\n    print(\"Not hot\")","shows":"Not hot","watch":"else never gets its own condition — you can't write else saved \u003C goal:. Need another condition in between? That's elif, and Day 3 is where it shows up."},"day":2,"dayTitle":"Asking a question"},{"prompt":"Indent four spaces and print the words Not yet — that's what happens when it is false.","answer":"    print(\"Not yet\")","output":"Not yet","teach":{"says":"Same indentation rule as the if's body — four spaces, because this line belongs to else the same way that one belonged to if."},"day":2,"dayTitle":"Asking a question"},{"kind":"choice","prompt":"Which line correctly checks whether saved and goal are equal, without changing either one?","options":[{"text":"saved = goal","why":"A single = stores a value — this line would overwrite saved with whatever goal holds. Python does not even accept this as a condition after if."},{"text":"saved == goal","correct":true},{"text":"saved =! goal","why":"This is not a real Python comparison — = and ! next to each other like this is just a syntax error, not a working condition."}],"teach":{"says":"One equals sign assigns a value — it changes something. Two together, ==, compare two values and hand back True or False without changing anything. Mixing them up is one of the most common mistakes in Python, and Python will not always catch it for you."},"day":2,"dayTitle":"Asking a question"},{"prompt":"Ask the same question again: is saved at least as big as goal? End the line with a colon.","answer":"if saved >= goal:","output":null,"teach":{"says":"Same question as Monday. Python doesn't remember that you already asked it inside a different if block — every if is independent, so you write the condition again from scratch."},"day":3,"dayTitle":"More than two answers"},{"prompt":"Indent four spaces and print the words Go buy it — that's what happens when it is true.","answer":"    print(\"Go buy it\")","output":null,"teach":{"says":"Same as Monday too — this line only runs when the if directly above it is True."},"day":3,"dayTitle":"More than two answers"},{"prompt":"Add a middle case: type elif, then whether saved is more than half of goal. End with a colon.","answer":"elif saved > goal / 2:","output":null,"teach":{"says":"elif (\"else if\") adds another question, but it only gets checked when everything above it worked out False. You can chain as many elif lines as you need between an if and an else — Python checks them top to bottom and stops at the first one that's True. / divides, so goal / 2 is exactly half of goal.","example":"score = 75\nif score >= 90:\n    print(\"A\")\nelif score >= 70:\n    print(\"B\")\nelse:\n    print(\"C\")","shows":"B","watch":"Order matters. Python stops at the first True line it finds and skips the rest — put a wide condition too early and it can catch cases a later, more specific line was supposed to handle. Same spacing habit applies to > and / as well — saved > goal / 2, not saved>goal/2."},"day":3,"dayTitle":"More than two answers"},{"prompt":"Indent four spaces and print the words Getting there — that's what happens in that middle case.","answer":"    print(\"Getting there\")","output":null,"teach":{"says":"Same indentation rule again — four spaces because this line belongs to the elif directly above it."},"day":3,"dayTitle":"More than two answers"},{"prompt":"Type else and a colon for everything that's left over, back at the left edge.","answer":"else:","output":null,"teach":{"says":"Same else as Day 2. Still no condition of its own — it fires only when every if and elif above it came back False."},"day":3,"dayTitle":"More than two answers"},{"prompt":"Indent four spaces and print the words Not close yet — the last case.","answer":"    print(\"Not close yet\")","output":"Not close yet","teach":{"says":"This is the branch that actually runs: saved is 40 and goal / 2 is 110, so saved > goal / 2 is False, the elif is skipped, and this final else is what prints."},"day":3,"dayTitle":"More than two answers"},{"prompt":"You can save $15 a week. Store that in a variable called pay.","answer":"pay = 15","output":null,"teach":{"says":"Same pattern as Day 1 — a new box, pay, remembering 15. Nothing new here; the loop below is where it gets used."},"day":4,"dayTitle":"Doing it again until it is done"},{"prompt":"You haven't saved any weeks yet. Store 0 in a variable called weeks.","answer":"weeks = 0","output":null,"teach":{"says":"weeks starts at 0 on purpose — it's about to count up by one every time the loop below runs. A counter has to start somewhere true, and zero weeks have passed before the loop has even begun."},"day":4,"dayTitle":"Doing it again until it is done"},{"prompt":"Start a loop: keep going as long as saved is less than goal. End the line with a colon.","answer":"while saved \u003C goal:","output":null,"teach":{"says":"while works like if, but it doesn't check its question just once. After the indented lines under it finish running, Python goes right back up to the while line and checks the condition again — and again — running that block over and over for as long as the answer stays True.","example":"count = 0\nwhile count \u003C 3:\n    print(count)\n    count = count + 1","shows":"0\n1\n2","watch":"saved \u003C goal has to become False eventually, or this runs forever. That only happens if something inside the loop changes saved — which is exactly what the next line does. Skip that line and you've built an infinite loop that never lets the page respond again. Same spacing habit as always — saved \u003C goal, not saved\u003Cgoal."},"day":4,"dayTitle":"Doing it again until it is done"},{"prompt":"Indent four spaces. Add pay to saved and store it back in saved.","answer":"    saved = saved + pay","output":null,"accept":["    saved = pay + saved"],"teach":{"says":"This is the line that makes the loop actually finish. saved = saved + pay works out the right side first — the old saved plus pay — and then stores that result back into saved, overwriting the old number. Every pass through the loop, saved gets a little bigger, until eventually saved \u003C goal turns False.","example":"total = 5\ntotal = total + 2\nprint(total)","shows":"7","watch":"= here isn't math-class \"equals.\" saved = saved + pay would be nonsense as an equation — nothing equals itself plus 15 — but it's a completely ordinary instruction to a computer: compute the right side, then store it on the left. Same spacing habit again — saved + pay, not saved+pay."},"day":4,"dayTitle":"Doing it again until it is done"},{"prompt":"Indent four spaces. Add one to weeks.","answer":"    weeks = weeks + 1","output":null,"accept":["    weeks = 1 + weeks"],"teach":{"says":"Same move as the line above, on the counter instead of the balance. weeks = weeks + 1 adds exactly one every pass, which is how weeks ends up counting the number of times the loop ran."},"day":4,"dayTitle":"Doing it again until it is done"},{"prompt":"Indent four spaces and print, in order: the word Week, then the weeks variable, a dash -, then the saved variable.","answer":"    print(\"Week\", weeks, \"-\", saved)","output":"Week 1 - 55\nWeek 2 - 70\nWeek 3 - 85\nWeek 4 - 100\nWeek 5 - 115\nWeek 6 - 130\nWeek 7 - 145\nWeek 8 - 160\nWeek 9 - 175\nWeek 10 - 190\nWeek 11 - 205\nWeek 12 - 220","teach":{"says":"This print sits inside the loop, so it runs on every single pass — one line of code, but the loop runs it 12 times before saved finally reaches goal, so 12 lines of output appear, each with that pass's own weeks and saved.","example":"n = 0\nwhile n \u003C 3:\n    print(\"Step\", n)\n    n = n + 1","shows":"Step 0\nStep 1\nStep 2","watch":"The \"-\" here is just a piece of text, same as any other comma-separated piece — Python doesn't treat it specially. It's only there so the line reads Week 1 - 55 instead of Week 1 55."},"day":4,"dayTitle":"Doing it again until it is done"},{"prompt":"Back at the left edge — the loop is over. Print, in order: the words It took, then the weeks variable, then the word weeks.","answer":"print(\"It took\", weeks, \"weeks\")","output":"It took 12 weeks","teach":{"says":"Back at the left edge, this line is no longer part of the loop — it runs exactly once, after the loop has completely finished, which only happens once saved is no longer less than goal. weeks still holds whatever it counted up to.","watch":"If this line stayed indented, it would be inside the loop instead of after it, and Python would try to run it every single pass instead of once at the end."},"day":4,"dayTitle":"Doing it again until it is done"},{"kind":"multi","prompt":"Select every statement that is true about why while saved \u003C goal: eventually stops looping.","options":[{"text":"saved = saved + pay makes saved bigger every pass, moving it toward goal.","correct":true},{"text":"The loop is hard-coded to stop after 12 passes.","why":"Python does not count passes for a while loop — it has no idea it's been 12 times. It only ever rechecks the condition. It happened to take 12 passes here because of these specific numbers, not because 12 is special."},{"text":"Eventually saved \u003C goal becomes False, and that is the only thing that stops a while loop.","correct":true},{"text":"weeks = weeks + 1 is what the while line checks to decide whether to stop.","why":"weeks only counts how many passes have happened — the while line never looks at it. Deleting that line wouldn't stop the loop from ending; deleting saved = saved + pay would stop it from EVER ending."}],"teach":{"says":"A while loop does not count passes by itself — it rechecks its condition every single time, top to bottom, and stops the instant that condition comes back False. If nothing inside the loop changes the value the condition depends on, it never stops on its own. That's what an infinite loop actually is: not a loop that runs forever on purpose, but one where nothing ever made the condition False."},"day":4,"dayTitle":"Doing it again until it is done"},{"prompt":"You spent money three different times: $12, $8, and $25. Store them in a list called spent.","answer":"spent = [12, 8, 25]","output":null,"teach":{"says":"A list holds more than one value in a single box, in order, separated by commas inside square brackets. spent isn't one number — it's a sequence of three, and the next step walks through them one at a time.","example":"print([3, 6, 9])","shows":"[3, 6, 9]","watch":"Square brackets, not parentheses. spent = (12, 8, 25) builds a different kind of value entirely — brackets are what make it a list."},"day":5,"dayTitle":"Going through a list"},{"prompt":"Start a loop that goes through spent one value at a time — name the loop variable item. End the line with a colon.","answer":"for item in spent:","output":null,"teach":{"says":"A for loop already knows how many times to run — once for every item in the list — so there's no condition to write and no counter to update by hand, unlike while. Each time through, item holds the next value from spent: first 12, then 8, then 25.","example":"colors = [\"red\", \"green\"]\nfor c in colors:\n    print(c)","shows":"red\ngreen","watch":"item is a name Python lets you choose, not a fixed keyword — in your own programs it could be called anything. Here it has to be exactly item, both because that's what this step is asking for and because whatever you call it has to match exactly what you type inside the loop body on the next two lines, or Python won't know what you mean."},"day":5,"dayTitle":"Going through a list"},{"prompt":"Indent four spaces. Subtract item from saved and store it back in saved.","answer":"    saved = saved - item","output":null,"teach":{"says":"Same reassignment move from Thursday, running in reverse — saved = saved - item takes item back out of the balance instead of adding to it."},"day":5,"dayTitle":"Going through a list"},{"prompt":"Indent four spaces and print, in order: the words After spending, then the item variable, then the words you have, then the saved variable.","answer":"    print(\"After spending\", item, \"you have\", saved)","output":"After spending 12 you have 208\nAfter spending 8 you have 200\nAfter spending 25 you have 175","teach":{"says":"Same idea as Thursday's loop print — one line of code, three passes through the list, three lines of output, each with that pass's own item and running saved."},"day":5,"dayTitle":"Going through a list"},{"kind":"multi","prompt":"Select every line below that is indented — the lines that belong to the loop's body and run once per item.","options":[{"text":"spent = [12, 8, 25]","why":"No leading spaces — this line sits at the left edge, outside the loop, so it only ever runs once, before the loop even starts."},{"text":"for item in spent:","why":"The for line itself starts at the left edge too. Indentation is what marks the lines UNDER it as the loop's body — this line is what creates that body, but it isn't part of it."},{"text":"    saved = saved - item","correct":true},{"text":"    print(\"After spending\", item, \"you have\", saved)","correct":true}],"teach":{"says":"Indentation is not decoration — it's what tells Python which lines belong to the loop and which don't. Every line indented under for item in spent: runs once per item; anything back at the left edge, including the for line itself, runs exactly once no matter how many items are in the list."},"day":5,"dayTitle":"Going through a list"}];
+const CYCLE = {"id":"saving-up","title":"Saving Up"};
+const REPORT_COLORS = {"navy":"002D62","silver":"D0D2D3"};
+</script>
+<script>
+const KEY = "notebook:" + CYCLE.id;
+const rec = JSON.parse(localStorage.getItem(KEY) || "null") || {
+  cycle: CYCLE.id,
+  started: new Date().toISOString(),
+  steps: STEPS.map(() => ({ attempts: [], revealed: false, done: false })),
+};
+const save = () => localStorage.setItem(KEY, JSON.stringify(rec));
+
+// True only while the resume-on-load replay below is re-running lock() for
+// every already-completed step. Without this, each replayed lock() call
+// would fire its own openStep(i+1) — nine or ten queued scrollIntoView
+// calls stacking up in a single synchronous pass, all landing on screen at
+// once the instant the browser gets to paint. The loop already reveals each
+// done card itself directly; lock() only needs to drive openStep — reveal,
+// then scroll to it — for the ONE card the student is actually resuming
+// onto, which happens once, after the loop, at the bottom of this file.
+let restoring = false;
+
+// openStep reveals the next card. The fade-and-rise reveal itself is pure
+// CSS now — @starting-style on .card (see the stylesheet) supplies the
+// "before" frame the instant [hidden] comes off, so clearing that attribute
+// is the whole animation trigger. That also means this same call, used both
+// for "the student just finished the step before this one" and for "resume
+// this card on page load," produces the identical visual in both cases —
+// there is no longer a separate no-animation path to keep in sync with it,
+// and prefers-reduced-motion is handled entirely in the stylesheet, not here.
+function openStep(i) {
+  const el = document.getElementById("step" + i);
+  if (el) {
+    el.hidden = false;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  } else {
+    updateDoneStats();
+    document.getElementById("done").hidden = false;
+  }
+}
+
+// True only once updateProgress has run at least once with a KNOWN done
+// count that differs from the current one — see the guard below. Without
+// it, the very first call (page load, before the student has done
+// anything) would "bump" the count from nothing to 0, a pulse with nothing
+// to celebrate.
+let lastKnownDone = -1;
+
+// updateProgress drives BOTH orientation devices the redesign adds in place of
+// day numbers: the "N of TOTAL" count + filling rail in the header, and the
+// vertical thread beside the card stack. Both read the identical --progress
+// custom property, set once here and left to CSS transitions to animate —
+// this function only ever computes a fraction and writes it down, never
+// touches layout directly.
+function updateProgress() {
+  const total = STEPS.length;
+  const done = rec.steps.filter((s) => s.done).length;
+  const frac = total > 0 ? done / total : 0;
+  document.body.style.setProperty("--progress", String(frac));
+
+  // A restrained "that counted" moment — see the design brief: a satisfying
+  // but not celebratory pulse on the number itself, ONLY the instant it
+  // actually changes. Pure CSS (the .bump keyframe in the stylesheet),
+  // retriggered by removing and re-adding the class across a forced reflow
+  // (reading offsetWidth) so it replays every time rather than only the
+  // first. Reduced motion turns the animation off in CSS; this still safely
+  // adds/removes a class that does nothing in that case.
+  //
+  // Skipped entirely while restoring is true (the resume-on-load replay,
+  // below) — no backticks in this comment on purpose, see the note at the
+  // top of RUNTIME on why one would break it. That loop calls lock() — and
+  // therefore this function — once per
+  // already-completed step in a tight synchronous pass, and forcing a
+  // layout reflow (reading offsetWidth) that many times in a row on page
+  // load is a real, measurable cost on the exact low-end hardware this has
+  // to run on, for an animation nobody is there to see mid-loop anyway.
+  const changed = !restoring && done !== lastKnownDone;
+  const bump = (el) => {
+    if (!el || !changed) return;
+    el.classList.remove("bump");
+    void el.offsetWidth;
+    el.classList.add("bump");
+  };
+  lastKnownDone = done;
+
+  const doneEl = document.getElementById("progress-done");
+  if (doneEl) doneEl.textContent = String(done);
+  bump(doneEl);
+  const totalEl = document.getElementById("progress-total");
+  if (totalEl) totalEl.textContent = String(total);
+  // The sticky bar's own copy of the same two numbers (see .stickybar in
+  // the stylesheet) — a separate pair of elements, not a duplicate
+  // aria-live region, since the sticky bar is aria-hidden and exists to be
+  // SEEN while scrolled, not announced.
+  const doneMini = document.getElementById("progress-done-mini");
+  if (doneMini) doneMini.textContent = String(done);
+  bump(doneMini);
+  const totalMini = document.getElementById("progress-total-mini");
+  if (totalMini) totalMini.textContent = String(total);
+  const wrap = document.getElementById("progress");
+  if (wrap) {
+    wrap.setAttribute("aria-valuenow", String(done));
+    wrap.setAttribute("aria-valuemax", String(total));
+  }
+  // The header's reset control is the SECONDARY one (see the design rule:
+  // primary lives in #done, secondary in the header, and the secondary one
+  // "must be out of the way"). Staying hidden until there's at least one
+  // done step is what makes it out of the way on a fresh page — there is
+  // nothing to protect a student from clearing before they've typed
+  // anything, so showing it from step one would just be clutter.
+  const resetHeader = document.getElementById("reset-header");
+  if (resetHeader) resetHeader.hidden = done === 0;
+}
+
+// updateDoneStats fills in the one line of #done that turns "you finished"
+// into something a student chasing a better grade can actually read at a
+// glance: which attempt this is, and — once there IS a previous attempt —
+// exactly how this one compares. This is the live-page half of the same
+// promise the downloaded report keeps (see buildReportHTML's historyLine);
+// the two are deliberately worded the same way so neither reads like a
+// different feature. Runs only when #done is about to become visible (see
+// openStep, below), because rec.steps is only fully "done" at that point.
+function updateDoneStats() {
+  const el = document.getElementById("done-stats");
+  if (!el) return;
+  const total = STEPS.length;
+  const done = rec.steps.filter((s) => s.done).length;
+  const revealed = rec.steps.filter((s) => s.revealed).length;
+  const runs = Array.isArray(rec.runs) ? rec.runs : [];
+  const attemptNumber = runs.length + 1;
+  let text = "Attempt " + attemptNumber + " — " + done + " of " + total + " steps, " + revealed + " revealed.";
+  if (runs.length > 0) {
+    const last = runs[runs.length - 1];
+    text += " Last time: " + last.done + "/" + last.total + " with " + last.revealed + " revealed.";
+  }
+  el.textContent = text;
+}
+
+// wireReset attaches the two-click confirm flow to ONE reset control —
+// called once per instance (header and #done both get their own). A
+// browser confirm() dialog was explicitly ruled out (looks broken, too easy
+// to dismiss blindly for something this destructive); this is the inline
+// equivalent: click "Start over" once and it's replaced by an explicit
+// warning plus a "Yes, clear my work" / "Cancel" pair, so clearing 25 steps
+// of work by accident takes two deliberate clicks, not one.
+function wireReset(root) {
+  if (!root) return;
+  const trigger = root.querySelector(".reset-trigger");
+  const confirmBox = root.querySelector(".reset-confirm");
+  const warn = root.querySelector(".reset-warn");
+  const yesBtn = root.querySelector(".reset-yes");
+  const cancelBtn = root.querySelector(".reset-cancel");
+
+  trigger.addEventListener("click", () => {
+    const done = rec.steps.filter((s) => s.done).length;
+    warn.textContent = done === 0
+      ? "Start over? There is no work to lose yet, but this also resets the clock."
+      : "This clears your work on " + done + " of " + STEPS.length + " steps. There is no undo — " +
+        "but a summary of this attempt is kept, so your improvement still shows.";
+    trigger.hidden = true;
+    confirmBox.hidden = false;
+    yesBtn.focus();
+  });
+  cancelBtn.addEventListener("click", () => {
+    confirmBox.hidden = true;
+    trigger.hidden = false;
+    trigger.focus();
+  });
+  yesBtn.addEventListener("click", resetAssignment);
+}
+
+// resetAssignment is the actual "try again" — archiveRun (shared with the
+// build-time gate and unit-tested on its own, see render.mjs) folds this run
+// into rec.runs, then a fresh, empty steps array takes its place. Reloading
+// the page afterward, rather than hand-unwinding every DOM mutation lock()
+// may have made across up to 30 cards (disabled inputs, removed buttons,
+// appended output blocks, checked radios, collapsed rows...), is deliberate:
+// the exact same startup code that already handles "a student closes the tab
+// and comes back" is what puts the fresh page in front of them, so a reset
+// page is provably identical to any other fresh load rather than a second,
+// hand-maintained code path that could drift from it.
+function resetAssignment() {
+  const fresh = STEPS.map(() => ({ attempts: [], revealed: false, done: false }));
+  const archived = archiveRun(rec, fresh, new Date().toISOString());
+  rec.runs = archived.runs;
+  rec.steps = archived.steps;
+  rec.started = archived.started;
+  save();
+  location.reload();
+}
+
+// shortOutput renders a typed step's canned output inside the compact
+// collapsed row. Day 4 and day 5 print a block of output several lines
+// long (the loop runs more than once) — showing all of it in a one-line
+// summary row would defeat the point of collapsing, so only the first line
+// shows, with a count of how many more follow. Nothing here reads student
+// input; output is the author-controlled field from the step's own data.
+// (No backticks in this comment on purpose: this whole block is itself the
+// body of a backtick template literal at the Node level — see the note at
+// the top of RUNTIME — so a literal backtick here would close it early.)
+function shortOutput(output) {
+  if (output === null || output === undefined) return "";
+  const lines = String(output).split("\n");
+  if (lines.length === 1) return lines[0];
+  const more = lines.length - 1;
+  return lines[0] + "  (+" + more + " more line" + (more === 1 ? "" : "s") + ")";
+}
+
+// summaryText reads whatever the DOM already shows for a just-locked step —
+// the textarea's current value for a typed step (the student's own correct
+// text, or the canonical answer if lock() already overwrote it on reveal),
+// or the set of options the lock() logic has already marked checked for a
+// choice/multi step (every correct option, per the reveal rule in RUNTIME's
+// lock()). It is read from the DOM rather than recomputed from step data so
+// there is exactly one source of truth for "what does this step's card
+// currently show" — the same DOM the student is looking at.
+function summaryText(el, step) {
+  if (kindOf(step) === "type") {
+    const ta = el.querySelector("textarea");
+    return ta ? ta.value : "";
+  }
+  // A choice step's collapsed row shows the QUESTION, not the joined option
+  // text. Concatenating several selected options produced strings like
+  // 'saved = saved - item; print("After spending", item, "you hav...' — three
+  // answers welded together and then truncated mid-word, which reads as
+  // corruption rather than as a record. The prompt is what identifies the step
+  // to a student scrolling back, and the exact selection is still in the
+  // record and still one click away by expanding the row.
+  const picked = el.querySelectorAll(".opt input:checked").length;
+  const total = el.querySelectorAll(".opt").length;
+  const q = String(step.prompt || "").replace(/\s+/g, " ").trim();
+  const tail = kindOf(step) === "multi" ? "  (" + picked + " of " + total + " selected)" : "";
+  return q + tail;
+}
+
+// Everything below is built with createElement/textContent, never innerHTML.
+// Student-typed text ends up in this page (as the value shown after a reveal) and
+// later in a file Colton opens on his own machine as the report. One construction
+// style throughout means nobody has to reason about which path is safe to relax.
+function showOutput(container, output) {
+  if (output === null || output === undefined) {
+    const none = document.createElement("div");
+    none.className = "none";
+    none.textContent = "Nothing prints. This line just remembers a value.";
+    container.appendChild(none);
+    return;
+  }
+  const out = document.createElement("div");
+  out.className = "out";
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = "Output";
+  out.appendChild(lbl);
+  out.appendChild(document.createTextNode(output));
+  container.appendChild(out);
+}
+
+// choice/multi steps have no code, so no output to show on unlock (see the
+// design rule: "No output on choice/multi steps"). A short confirmation
+// takes its place instead — the step's own revealText if the author wrote
+// one, otherwise a generic line. Built with createElement/textContent, same
+// as showOutput above, even though this text is author-controlled: one
+// construction style throughout means nobody has to reason about which path
+// is safe to relax.
+function showConfirmation(container, step) {
+  const box = document.createElement("div");
+  box.className = "confirm";
+  box.textContent = step.revealText != null ? step.revealText : "Locked in.";
+  container.appendChild(box);
+}
+
+// A step is "type" (typed code, the original behaviour) unless it explicitly
+// says otherwise. Absent kind or kind:"type" are the same thing — this one
+// helper is the single place that distinction is made, so the check/lock/
+// resume logic below never has to repeat the || itself.
+function kindOf(step) {
+  return step.kind === "choice" || step.kind === "multi" ? step.kind : "type";
+}
+
+function lock(i, revealed) {
+  const el = document.getElementById("step" + i);
+  const step = STEPS[i];
+  // .done — the class that actually triggers the visual collapse — is added
+  // further down, after a short delay, NOT here. See the comment by
+  // collapseAndAdvance() below for why: showOutput/showConfirmation are
+  // about to put something on screen that only exists so the student reads
+  // it (see saving-up.mjs's own header comment on why output has to be
+  // trustworthy the instant it's shown), and collapsing in the same tick
+  // would hide it before the browser ever paints it. (No backticks in this
+  // comment — see the note at the top of RUNTIME on why one would break it.)
+  // showOutput/showConfirmation must append inside .card-body, not the outer
+  // .card — .card-body is the region CSS hides once .done (unless the
+  // student clicks back in to peek). Appending to the outer card directly
+  // would put the output/confirmation box as a SIBLING of .card-body,
+  // outside the thing that collapses, so it would stay visible underneath
+  // every collapsed row forever.
+  const body = el.querySelector(".card-body");
+
+  if (kindOf(step) === "type") {
+    const ta = el.querySelector("textarea");
+    ta.disabled = true;
+    const btn = el.querySelector(".check-btn");
+    if (btn) btn.remove();
+    showOutput(body, step.output);
+  } else {
+    // Every correct option gets checked and marked, whether or not the
+    // student picked it — this is the reveal, the same way a typed step's
+    // textarea gets overwritten with the canonical answer on a 3rd-try
+    // reveal. Anything the student had checked that ISN'T correct keeps its
+    // checked state and gets marked "wrong" instead of being silently
+    // unchecked, so a revealed step still shows exactly what they picked
+    // alongside what was actually right.
+    const correctIdxs = new Set(step.options.map((o, oi) => (o.correct ? oi : -1)).filter((oi) => oi > -1));
+    const inputs = Array.from(el.querySelectorAll("input"));
+    inputs.forEach((inp, oi) => {
+      const label = inp.closest("label");
+      if (correctIdxs.has(oi)) {
+        inp.checked = true;
+        if (label) label.classList.add("correct");
+      } else if (inp.checked && label) {
+        label.classList.add("wrong");
+      }
+      inp.disabled = true;
+    });
+    const btn = el.querySelector(".check-btn");
+    if (btn) btn.remove();
+    showConfirmation(body, step);
+  }
+
+  // Populate the compact collapsed row BEFORE toggling rec.steps[i].done —
+  // summaryText reads the DOM state this same function just finished
+  // setting up (the textarea's final value, or which options ended up
+  // checked), so it has to run after the per-kind block above, not before.
+  const sumLine = el.querySelector(".sum-line");
+  if (sumLine) sumLine.textContent = summaryText(el, step);
+  const sumOut = el.querySelector(".sum-output");
+  if (sumOut) sumOut.textContent = shortOutput(step.output);
+
+  rec.steps[i].done = true;
+  rec.steps[i].revealed = !!revealed;
+  save();
+  updateProgress();
+
+  // The actual collapse, plus advancing to the next card, happens after a
+  // short pause rather than instantly — long enough to read a short output
+  // line or the revealed answer, not so long that a student blowing through
+  // easy steps feels throttled. A reveal gets the longer pause: there is
+  // more to read (the hint message AND, for a typed step, the canonical
+  // answer that just overwrote the textarea) and it matters more that it
+  // actually gets read. During the resume-on-load replay (restoring===true)
+  // this is skipped entirely — those steps were already read in a previous
+  // session, and stacking up twenty-odd staggered timeouts just to reach
+  // where the student left off would make every refresh feel slow.
+  const collapseAndAdvance = () => {
+    el.classList.add("done");
+    if (!restoring) openStep(i + 1);
+  };
+  if (restoring) {
+    collapseAndAdvance();
+  } else {
+    setTimeout(collapseAndAdvance, revealed ? 1500 : 900);
+  }
+}
+
+STEPS.forEach((step, i) => {
+  const el = document.getElementById("step" + i);
+  const btn = el.querySelector(".check-btn");
+  const msg = el.querySelector(".msg");
+  const kind = kindOf(step);
+
+  const check = () => {
+    // Attempt number is whatever this step's attempt log already holds plus one —
+    // it survives a refresh because rec.steps[i].attempts does, so the escalation
+    // (position, then category, then reveal) never resets just because the tab did.
+    const attemptNumber = rec.steps[i].attempts.length + 1;
+    let r;
+
+    if (kind === "type") {
+      const ta = el.querySelector("textarea");
+      const typed = ta.value;
+      r = hintFor(typed, step.answer, attemptNumber, normalize, step.accept);
+      // Push EVERY attempt, correct or not, before doing anything else with
+      // the result — the point of this record is the path the student
+      // took, not just whether they eventually got there.
+      rec.steps[i].attempts.push({ text: typed, at: new Date().toISOString(), correct: r.correct });
+    } else {
+      // Read whatever is checked right now, in DOM order — that order
+      // always matches step.options because options are never shuffled
+      // (see the design rule: authored order is the shown order).
+      const selected = Array.from(el.querySelectorAll("input"))
+        .map((inp, oi) => (inp.checked ? oi : -1))
+        .filter((oi) => oi > -1);
+      r = choiceHintFor(selected, step.options, attemptNumber);
+      // Store the indices (the precise, machine-checkable record of what
+      // was picked) AND a human-readable text rendering of the same
+      // selection, so the downloaded report's "final answer" column stays
+      // readable without the report needing the original options list.
+      const text = selected.map((oi) => step.options[oi].text).join("; ");
+      rec.steps[i].attempts.push({ text, selected, at: new Date().toISOString(), correct: r.correct });
+    }
+    save();
+
+    if (r.correct) {
+      msg.textContent = "";
+      msg.className = "msg";
+      lock(i, false);
+      return;
+    }
+
+    msg.textContent = r.message;
+    msg.className = r.reveal ? "msg reveal" : "msg bad";
+    if (r.reveal) {
+      if (kind === "type") el.querySelector("textarea").value = step.answer;
+      lock(i, true);
+    }
+  };
+
+  btn.addEventListener("click", check);
+  if (kind === "type") {
+    el.querySelector("textarea").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        check();
+      }
+    });
+  }
+
+  // The collapsed summary row is a real <button> (see the design rule: real
+  // controls, not clickable divs) so it is free — no extra keydown handling
+  // needed for Enter/Space. It only ever does anything once the card is
+  // .done (CSS hides it entirely until then), so no guard is needed here
+  // either: a hidden, undisplayed button cannot receive focus or a click.
+  const summary = el.querySelector(".card-summary");
+  summary.addEventListener("click", () => {
+    const open = el.classList.toggle("peek");
+    summary.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+});
+
+wireReset(document.getElementById("reset-header"));
+wireReset(document.getElementById("reset-done"));
+// Runs once up front so the header's reset control (hidden by default in
+// the markup) is in the right state from the very first paint even for a
+// brand-new student whose resume loop below never executes lock() at all —
+// every later change to rec.steps re-derives this same state through the
+// lock() calls that already call updateProgress() on their own.
+updateProgress();
+
+// Restore progress. Replays every already-completed step so a refresh costs the
+// student nothing — the alternative is a gate that punishes closing the tab.
+restoring = true;
+let resume = 0;
+for (let i = 0; i < STEPS.length; i++) {
+  if (!rec.steps[i].done) break;
+  const el = document.getElementById("step" + i);
+  el.hidden = false;
+  if (kindOf(STEPS[i]) === "type") {
+    el.querySelector("textarea").value = STEPS[i].answer;
+  }
+  lock(i, rec.steps[i].revealed);
+  resume = i + 1;
+}
+restoring = false;
+// A genuinely brand-new session (resume === 0: nothing completed, nothing
+// to resume onto) shows the page exactly where the browser already put
+// it — the top, hero header and "how this works" first. openStep's
+// scrollIntoView is for RETURNING to the middle of the page, either
+// because the student just finished a step or because they're resuming
+// past several already-done ones; centring step one in the viewport on a
+// student's very first paint would shove the orientation content they
+// haven't read yet off the top of the screen for no reason.
+if (resume > 0) {
+  openStep(resume);
+} else {
+  document.getElementById("step0").hidden = false;
+}
+
+document.getElementById("dl").addEventListener("click", () => {
+  // btoa(unescape(encodeURIComponent(...))) is the standard UTF-8-safe base64
+  // encoding available in a browser with no imports. It produces the same byte
+  // sequence as Node's Buffer.from(str, "utf8").toString("base64") for the same
+  // string — which, combined with calling the identical buildReportHTML used by
+  // buildReport(), is what makes this download byte-equivalent to calling
+  // buildReport() on this same record server-side, rather than an approximation
+  // of it.
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(rec))));
+  const html = buildReportHTML(rec, { title: CYCLE.title }, b64, REPORT_COLORS);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  a.download = CYCLE.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") + ".html";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+</script>
+</body></html>
