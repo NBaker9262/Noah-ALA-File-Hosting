@@ -1,0 +1,27 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remote HTML Loader</title>
+  <style>
+    html, body, iframe {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+    }
+  </style>
+</head>
+<body>
+  <iframe id="remote" src="about:blank"></iframe>
+
+  <script>
+    // Set the remote HTML file here
+    const SERVER_URL = "/eaglercraft26-2.html";
+
+    document.getElementById("remote").src = SERVER_URL;
+  </script>
+</body>
+</html>
